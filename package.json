@@ -1,7 +1,7 @@
-﻿{
+{
   "name": "dsh-one-click-polish",
   "version": "1.2.0",
-  "description": "涓€閿鼎鑹?/ 鎵╁啓 / 鑷姩椹鹃┒ for the DSH composer: rewrite the current draft with the model the session is switched to, expand a one-line wish into a task brief, or let an AI drive a goal round after round.",
+  "description": "One-click polish, expand and autopilot for the DeepSeek Harness composer: rewrite the draft with the model the session is switched to, expand a one-line wish into a task brief, or let an AI drive a goal round after round.",
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -33,7 +33,7 @@
     "LICENSE"
   ],
   "license": "MIT",
-  "author": "",
+  "author": "HTRP1486",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/HTRP1486/dsh-one-click-polish.git"
