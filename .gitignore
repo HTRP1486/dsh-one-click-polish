@@ -1,0 +1,14 @@
+# Runtime state written by the plugin itself
+.one-click-polish-autopilot.json
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Node
+node_modules/
+npm-debug.log*
+pnpm-debug.log*

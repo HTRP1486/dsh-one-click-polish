@@ -1,0 +1,6 @@
+# dsh-one-click-polish
+
+Install source for DeepSeek Harness. See README.md for usage.
+
+`dsh` resolves a bundle from a repository by its `package.json` (`dsh.bundle.patch`)
+and its `index.js` / `client.js` halves. Nothing here is built or transpiled.

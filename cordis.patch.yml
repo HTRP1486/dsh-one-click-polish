@@ -1,0 +1,14 @@
+# dsh-one-click-polish bundle patch.
+#
+# One insert mounts the Host half (HTTP routes + the polish model call). The
+# browser half rides this same row through package.json `dsh.client`, because
+# only a row named after the bare package carries a Client module.
+#
+# The row stays minimal on purpose: `inject` is declared by the module itself,
+# and the settings page writes this row's `config` into the profile patch layer,
+# which overrides this entry wholesale. Keeping the two shapes identical means
+# the override cannot silently drop a field.
+- insert:
+    - id: one-click-polish
+      name: 'dsh-one-click-polish'
+      config: {}

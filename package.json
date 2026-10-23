@@ -1,0 +1,68 @@
+﻿{
+  "name": "dsh-one-click-polish",
+  "version": "1.2.0",
+  "description": "涓€閿鼎鑹?/ 鎵╁啓 / 鑷姩椹鹃┒ for the DSH composer: rewrite the current draft with the model the session is switched to, expand a one-line wish into a task brief, or let an AI drive a goal round after round.",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "polish",
+    "proofread",
+    "rewrite",
+    "expand",
+    "autopilot",
+    "composer",
+    "llm"
+  ],
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "author": "",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HTRP1486/dsh-one-click-polish.git"
+  },
+  "homepage": "https://github.com/HTRP1486/dsh-one-click-polish#readme",
+  "bugs": {
+    "url": "https://github.com/HTRP1486/dsh-one-click-polish/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    }
+  }
+}

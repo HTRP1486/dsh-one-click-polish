@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "One-click Polish / Expand",
+    "description": "Adds Polish and Expand to the composer toolbar. Polish rewrites the draft with the model this session is switched to (light, standard, or deep). Expand turns a one-line wish into a task brief: goal, features, flow, edge cases, acceptance criteria. The result is written back into the composer."
+  }
+}
