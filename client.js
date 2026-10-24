@@ -823,6 +823,19 @@ window.__ModuleLoader__.load({
       const think = useThink()
       const pilotTimer = useRef(null)
 
+      // Follow the conversation the user is looking at. The window captures a
+      // session when it opens, so switching chats left it anchored to the old one;
+      // the composer always knows which session is current, so it retargets the
+      // open window instead of making the user close and reopen it.
+      useEffect(() => {
+        if (thinkState.open !== true) return
+        // No session bound yet (a brand-new composer): leave the window as it is.
+        if (sessionId === undefined || sessionId === null || String(sessionId) === '') return
+        const current = String(sessionId)
+        if (thinkState.sessionId === current) return
+        publishThink({ open: true, sessionId: current })
+      }, [sessionId, think.open])
+
       const cycleStrength = useCallback(() => {
         setStrength(previous => {
           const next = STRENGTHS[(STRENGTHS.indexOf(previous) + 1) % STRENGTHS.length]
