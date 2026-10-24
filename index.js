@@ -381,7 +381,7 @@ async function polishRoute(ctx, settings, req, res) {
   const mode = body?.mode === 'expand' ? 'expand' : 'polish'
   const research = RESEARCH[strength] ?? 'none'
   const requestId = typeof body?.requestId === 'string' && body.requestId !== '' ? body.requestId : null
-  const job = requestId === null ? null : createJob(requestId, mode, research)
+  const job = requestId === null ? null : createJob(requestId, mode, research, typeof body?.sessionId === 'string' ? body.sessionId : '')
 
   const controller = new AbortController()
   // The budget covers the rewrite only. The lookup runs under its own, shorter
@@ -1171,7 +1171,7 @@ function jobSteps(research) {
   return steps
 }
 
-function createJob(id, mode, research) {
+function createJob(id, mode, research, sessionId) {
   const job = {
     id,
     mode,
@@ -1186,6 +1186,8 @@ function createJob(id, mode, research) {
     // What the model reasoned and every tool it called, in order. Bounded so a
     // long run cannot grow without limit.
     trace: [],
+    // Which session this belongs to, so every traced step can be archived.
+    sessionId: typeof sessionId === 'string' ? sessionId : '',
     at: Date.now(),
   }
   jobs.set(id, job)
@@ -1200,6 +1202,11 @@ function trace(job, entry) {
   if (job === null) return
   job.trace.push({ ...entry, at: Date.now() })
   if (job.trace.length > TRACE_LIMIT) job.trace.shift()
+  // The live trace belongs to one run and dies with the process. The log is what
+  // the settings page reads afterwards, so the same entry is archived per session.
+  if (typeof job.sessionId === 'string' && job.sessionId !== '') {
+    appendLog(job.sessionId, { run: job.id, ...entry })
+  }
 }
 
 function markStep(job, key, state, detail) {
@@ -1531,6 +1538,85 @@ function resumablePilots(ctx) {
   return out
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// autopilot run log (per session, persisted)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * One record per finished or interrupted autopilot round, kept per session.
+ *
+ * The live job table only holds the current run, and it is gone the moment the
+ * Host restarts. This file is the archive behind the settings page: what the
+ * driver read, which files it opened, and every message it sent.
+ */
+const LOG_LIMIT_PER_SESSION = 400
+
+function logFile() {
+  const dir = profileDir()
+  return dir === null ? null : join(dir, '.one-click-polish-log.json')
+}
+
+function readLogs() {
+  const file = logFile()
+  if (file === null || !existsSync(file)) return {}
+  try {
+    const parsed = JSON.parse(readFileSync(file, 'utf8'))
+    return parsed !== null && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeLogs(logs) {
+  const file = logFile()
+  if (file === null) return
+  try {
+    writeFileSync(file, JSON.stringify(logs), 'utf8')
+  } catch { /* a read-only profile keeps the feature, just not across restarts */ }
+}
+
+/** Append one entry to a session's log, trimming the oldest. */
+function appendLog(sessionId, entry) {
+  const logs = readLogs()
+  const list = Array.isArray(logs[sessionId]) ? logs[sessionId] : []
+  list.push({ at: new Date().toISOString(), ...entry })
+  logs[sessionId] = list.slice(-LOG_LIMIT_PER_SESSION)
+  writeLogs(logs)
+}
+
+/** Read one session's log, newest last. */
+function readSessionLog(sessionId) {
+  const logs = readLogs()
+  return Array.isArray(logs[sessionId]) ? logs[sessionId] : []
+}
+
+/** Sessions that have any log, with a one-line summary for the picker. */
+function listLoggedSessions(ctx) {
+  const logs = readLogs()
+  const out = []
+  for (const [sessionId, entries] of Object.entries(logs)) {
+    if (!Array.isArray(entries) || entries.length === 0) continue
+    const sent = entries.filter(entry => entry.kind === 'sent').length
+    const files = new Set()
+    for (const entry of entries) {
+      if (entry.kind === 'tool' && typeof entry.summary === 'string') files.add(entry.summary)
+    }
+    out.push({
+      sessionId,
+      entries: entries.length,
+      sent,
+      files: files.size,
+      first: entries[0]?.at ?? null,
+      last: entries[entries.length - 1]?.at ?? null,
+      alive: ctx.agents.get(sessionId) !== undefined,
+    })
+  }
+  out.sort((left, right) => String(right.last).localeCompare(String(left.last)))
+  return out
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// autopilot: an AI that writes the next prompt and sends it
 // ─────────────────────────────────────────────────────────────────────────────
 // autopilot: an AI that writes the next prompt and sends it
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1869,8 +1955,30 @@ async function autopilotRoute(ctx, settings, req, res) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// plugin entry
+// run log route
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * GET …/runs                      sessions that have a log, newest first
+ * GET …/runs?sessionId=<id>       that session's entries, oldest first
+ * GET …/runs?sessionId=<id>&after keep only entries newer than this ISO time
+ *
+ * The archive is what survives a restart, so the panel can scroll back through
+ * what the driver read and sent after the run itself is long gone.
+ */
+async function runsRoute(ctx, req, res) {
+  const url = new URL(req.url ?? '/', 'http://localhost')
+  const sessionId = url.searchParams.get('sessionId')
+  if (sessionId === null || sessionId === '') {
+    sendJson(res, 200, { ok: true, sessions: listLoggedSessions(ctx) })
+    return
+  }
+  const after = url.searchParams.get('after')
+  let entries = readSessionLog(sessionId)
+  if (after !== null && after !== '') entries = entries.filter(entry => String(entry.at) > after)
+  sendJson(res, 200, { ok: true, sessionId, entries })
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // plugin entry
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1926,6 +2034,13 @@ export function apply(ctx, config) {
     handler: (req, res) => progressRoute(req, res)
       .catch(error => sendJson(res, 500, { ok: false, error: textOf(error) })),
   }), 'one-click-polish: progress route')
+
+  ctx.effect(() => server.register({
+    kind: 'exact',
+    path: `${PREFIX}/runs`,
+    handler: (req, res) => runsRoute(ctx, req, res)
+      .catch(error => sendJson(res, 500, { ok: false, error: textOf(error) })),
+  }), 'one-click-polish: run log route')
 
   ctx.effect(() => server.register({
     kind: 'exact',

@@ -40,6 +40,7 @@ window.__ModuleLoader__.load({
     const EFFORTS = ENDPOINT.replace(/\/polish$/, '/efforts')
     const PROGRESS = ENDPOINT.replace(/\/polish$/, '/progress')
     const PILOT = ENDPOINT.replace(/\/polish$/, '/autopilot')
+    const RUNS = ENDPOINT.replace(/\/polish$/, '/runs')
 
     /** The in-flight request, so the panel can cancel it. */
     let activeAbort = null
@@ -81,6 +82,25 @@ window.__ModuleLoader__.load({
      * A single POST cannot report progress, so the panel polls the Host's job
      * table while the request is in flight. `null` means no panel at all.
      */
+    /** Right-hand thinking window: open state and the session it follows. */
+    let thinkState = { open: false, sessionId: null }
+    const thinkListeners = new Set()
+
+    function publishThink(next) {
+      thinkState = next
+      for (const listener of thinkListeners) listener()
+    }
+
+    function useThink() {
+      const [value, setValue] = useState(thinkState)
+      useEffect(() => {
+        const listener = () => setValue(thinkState)
+        thinkListeners.add(listener)
+        listener()
+        return () => { thinkListeners.delete(listener) }
+      }, [])
+      return value
+    }
     let jobState = null
     const jobListeners = new Set()
     /**
@@ -246,6 +266,19 @@ window.__ModuleLoader__.load({
         'auto.trace.think': '思考',
         'auto.trace.sent': '已发送',
         'auto.trace.conclusion': '结论',
+        'auto.trace.dock': '在右侧显示',
+        'auto.trace.undock': '关闭右侧窗口',
+        'auto.trace.title': '自动思考',
+        'auto.trace.collapse': '收起',
+        'auto.trace.expand': '展开',
+        'auto.trace.close': '关闭',
+        'auto.trace.failed': '读取日志失败',
+        'runs.title': '自动运行日志',
+        'runs.hint': '每个对话的自动驾驶记录：它读了哪些文件、调用了什么、发了什么。按会话归档，重启后仍在。',
+        'runs.empty': '还没有任何自动运行记录',
+        'runs.sent': '条已发送',
+        'runs.entries': '条记录',
+        'runs.alive': '会话在运行',
         'auto.resume.found': '上次中断的自动运行',
         'auto.resume.action': '从中断处继续',
         'auto.resume.discard': '丢弃',
@@ -360,6 +393,19 @@ window.__ModuleLoader__.load({
         'auto.trace.think': 'Thinking',
         'auto.trace.sent': 'Sent',
         'auto.trace.conclusion': 'Conclusion',
+        'auto.trace.dock': 'Show on the right',
+        'auto.trace.undock': 'Close the right window',
+        'auto.trace.title': 'Autopilot thinking',
+        'auto.trace.collapse': 'Collapse',
+        'auto.trace.expand': 'Expand',
+        'auto.trace.close': 'Close',
+        'auto.trace.failed': 'Could not read the log',
+        'runs.title': 'Autopilot run log',
+        'runs.hint': 'Per conversation: which files the driver read, what it called, and what it sent. Archived by session, so it survives a restart.',
+        'runs.empty': 'No autopilot run recorded yet',
+        'runs.sent': 'sent',
+        'runs.entries': 'entries',
+        'runs.alive': 'session live',
         'auto.resume.found': 'Interrupted run from last time',
         'auto.resume.action': 'Resume where it stopped',
         'auto.resume.discard': 'Discard',
@@ -624,6 +670,46 @@ window.__ModuleLoader__.load({
 .dsh-op-traceRow[data-kind="sent"] .dsh-op-traceTag{color:var(--dsw-alias-state-success-primary)}
 .dsh-op-traceRow[data-kind="conclusion"] .dsh-op-traceTag{color:var(--dsw-alias-state-warn-primary)}
 .dsh-op-traceText{white-space:pre-wrap;word-break:break-word;opacity:.9}
+.dsh-op-think{position:fixed;top:12px;right:12px;bottom:12px;z-index:1400;width:340px;max-width:42vw;
+  display:flex;flex-direction:column;border-radius:var(--dsw-radius-panel);
+  background:var(--dsw-alias-bg-layer-2);border:.5px solid var(--dsw-alias-border-l2);
+  --dsw-elevation-stroke-color:var(--dsw-alias-border-l1);
+  box-shadow:var(--dsw-elevation-prominent);color:var(--dsw-alias-label-primary);
+  font-size:12px;line-height:17px;overflow:hidden}
+.dsh-op-think[data-collapsed="true"]{bottom:auto;height:auto}
+.dsh-op-thinkHead{display:flex;align-items:center;gap:8px;padding:9px 10px;
+  border-bottom:1px solid var(--dsw-alias-border-l1);flex:none}
+.dsh-op-thinkTitle{font-size:12.5px;font-weight:600;flex:1;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsh-op-thinkCount{flex:none;font-size:11px;color:var(--dsw-alias-label-secondary);
+  background:var(--dsw-alias-bg-base);border-radius:999px;padding:1px 7px}
+.dsh-op-thinkBtn{flex:none;width:22px;height:22px;border:none;border-radius:6px;cursor:pointer;
+  background:transparent;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:1;
+  display:grid;place-items:center}
+.dsh-op-thinkBtn:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dsh-op-thinkBodyScroll{flex:1;min-height:0;overflow-y:auto;padding:8px 10px;
+  display:flex;flex-direction:column;gap:9px}
+.dsh-op-thinkRow{display:flex;flex-direction:column;gap:2px}
+.dsh-op-thinkMeta{display:flex;align-items:baseline;gap:6px}
+.dsh-op-thinkTag{font-size:11px;font-weight:600;color:var(--dsw-alias-label-primary)}
+.dsh-op-thinkRow[data-kind="tool"] .dsh-op-thinkTag{color:var(--dsw-alias-brand-primary)}
+.dsh-op-thinkRow[data-kind="sent"] .dsh-op-thinkTag{color:var(--dsw-alias-state-success-primary)}
+.dsh-op-thinkRow[data-kind="conclusion"] .dsh-op-thinkTag{color:var(--dsw-alias-state-warn-primary)}
+.dsh-op-thinkTime{margin-left:auto;font-size:10px;color:var(--dsw-alias-label-secondary);opacity:.8}
+.dsh-op-thinkBody{white-space:pre-wrap;word-break:break-word;font-size:11.5px;line-height:16px;
+  color:var(--dsw-alias-label-secondary)}
+.dsh-op-runs{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+.dsh-op-runRow{display:flex;align-items:center;gap:8px;width:100%;padding:7px 9px;
+  border-radius:8px;border:1px solid var(--dsw-alias-border-l1);cursor:pointer;text-align:left;
+  background:var(--dsw-alias-bg-base);color:inherit;font:inherit;font-size:12px}
+.dsh-op-runRow:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dsh-op-runRow[data-active="true"]{border-color:var(--dsw-alias-brand-primary);
+  background:var(--dsw-alias-bg-layer-2)}
+.dsh-op-runId{font-weight:600;font-family:ui-monospace,monospace;font-size:11.5px}
+.dsh-op-runMeta{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-secondary)}
+.dsh-op-runLog{display:flex;flex-direction:column;gap:9px;max-height:340px;overflow-y:auto;
+  margin-top:8px;padding:8px;border-radius:8px;background:var(--dsw-alias-bg-base);
+  border:1px solid var(--dsw-alias-border-l1)}
 .dsh-op-resume{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px;
   border-radius:8px;background:var(--dsw-alias-interactive-bg-hover);
   border:1px solid var(--dsw-alias-border-l1)}
@@ -728,6 +814,7 @@ window.__ModuleLoader__.load({
       const [autoTrace, setAutoTrace] = useState(null)
       const [resumable, setResumable] = useState(null)
       const [starting, setStarting] = useState(false)
+      const think = useThink()
       const pilotTimer = useRef(null)
 
       const cycleStrength = useCallback(() => {
@@ -1164,6 +1251,20 @@ window.__ModuleLoader__.load({
                       }
                     },
                   }, autoTrace === null ? t('auto.trace.show') : t('auto.trace.hide')),
+                  h('button', {
+                    type: 'button',
+                    className: 'dsh-op-link',
+                    onClick: () => {
+                      // Dock the live view on the right; the inline list above is
+                      // for a quick look, this is for watching a long run.
+                      if (thinkState.open === true) {
+                        publishThink({ open: false, sessionId: null })
+                        return
+                      }
+                      publishThink({ open: true, sessionId: String(sessionId) })
+                      setAutoOpen(false)
+                    },
+                  }, think.open === true ? t('auto.trace.undock') : t('auto.trace.dock')),
                   autoTrace === null
                     ? null
                     : h('div', { className: 'dsh-op-trace' },
@@ -1454,7 +1555,110 @@ window.__ModuleLoader__.load({
             : h('span', { className: 'dsh-op-jobDetail' }, step.detail)))),
       failed ? h('div', { className: 'dsh-op-jobError' }, job.error) : null)
 
-      return h(React.Fragment, null, dialog, panel)
+      return h(React.Fragment, null, dialog, panel, h(ThinkWindow, { t }))
+    }
+
+    // ── right-hand thinking window ──────────────────────────────────────────
+    /**
+     * A docked panel on the right showing the driver's reasoning and tool calls
+     * as they happen, with the room to scroll back through earlier rounds.
+     *
+     * It lives in `shell.overlay` rather than the right sidebar: the sidebar's
+     * `sidebar.right.pane.tab` seat needs a full tab lifecycle (content id, title
+     * chip, menu rows) for what is really a read-only monitor, and this window has
+     * to be usable at any width.
+     */
+    function ThinkWindow({ t }) {
+      const think = useThink()
+      const [entries, setEntries] = useState([])
+      const [status, setStatus] = useState('idle')
+      const [collapsed, setCollapsed] = useState(false)
+      const bodyRef = useRef(null)
+      const pinnedRef = useRef(true)
+
+      // Follow the session's live run while the window is open.
+      useEffect(() => {
+        if (think.open !== true || think.sessionId === null) return undefined
+        let cancelled = false
+        const tick = async () => {
+          try {
+            const response = await fetch(`${RUNS}?sessionId=${encodeURIComponent(think.sessionId)}`)
+            const payload = await response.json()
+            if (cancelled) return
+            const list = Array.isArray(payload?.entries) ? payload.entries : []
+            setEntries(list.slice(-300))
+            setStatus('ready')
+          } catch {
+            if (!cancelled) setStatus('error')
+          }
+          if (!cancelled) setTimeout(tick, 2000)
+        }
+        tick()
+        return () => { cancelled = true }
+      }, [think.open, think.sessionId])
+
+      // Keep the newest entry in view unless the user scrolled up to read.
+      useEffect(() => {
+        const node = bodyRef.current
+        if (node === null || pinnedRef.current !== true) return
+        node.scrollTop = node.scrollHeight
+      }, [entries.length, collapsed])
+
+      const onScroll = () => {
+        const node = bodyRef.current
+        if (node === null) return
+        pinnedRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 48
+      }
+
+      if (think.open !== true) return null
+
+      const rows = entries.map((entry, index) => {
+        const kind = entry.kind
+        const tag = kind === 'round'
+          ? `${t('auto.trace.think')} ${entry.round ?? ''}`
+          : kind === 'tool'
+            ? (entry.name ?? 'tool')
+            : kind === 'sent'
+              ? `${t('auto.trace.sent')} ${entry.round ?? ''}`
+              : t('auto.trace.conclusion')
+        const body = kind === 'tool'
+          ? `${entry.summary ?? ''}${entry.text ? ` — ${entry.text}` : ''}`
+          : (entry.reasoning || entry.text || '')
+        return h('div', { key: index, className: 'dsh-op-thinkRow', 'data-kind': kind },
+          h('div', { className: 'dsh-op-thinkMeta' },
+            h('span', { className: 'dsh-op-thinkTag' }, tag),
+            entry.at === undefined ? null : h('span', { className: 'dsh-op-thinkTime' }, String(entry.at).slice(11, 19))),
+          h('div', { className: 'dsh-op-thinkBody' }, String(body).slice(0, 1500)))
+      })
+
+      return h('div', { className: 'dsh-op-think', 'data-collapsed': collapsed ? 'true' : 'false' },
+        h('div', { className: 'dsh-op-thinkHead' },
+          h('span', { className: 'dsh-op-thinkTitle' }, t('auto.trace.title')),
+          h('span', { className: 'dsh-op-thinkCount' }, `${rows.length}`),
+          h('button', {
+            type: 'button',
+            className: 'dsh-op-thinkBtn',
+            title: collapsed ? t('auto.trace.expand') : t('auto.trace.collapse'),
+            onClick: () => setCollapsed(previous => !previous),
+          }, collapsed ? '▢' : '—'),
+          h('button', {
+            type: 'button',
+            className: 'dsh-op-thinkBtn',
+            title: t('auto.trace.close'),
+            onClick: () => publishThink({ open: false, sessionId: null }),
+          }, '✕')),
+        collapsed
+          ? null
+          : h('div', {
+            ref: bodyRef,
+            className: 'dsh-op-thinkBodyScroll',
+            onScroll,
+          },
+          status === 'error'
+            ? h('div', { className: 'dsh-op-hint dsh-op-hint--error' }, t('auto.trace.failed'))
+            : rows.length === 0
+              ? h('div', { className: 'dsh-op-hint' }, t('auto.trace.empty'))
+              : rows))
     }
 
     // ── model picker ────────────────────────────────────────────────────────
@@ -1693,6 +1897,9 @@ window.__ModuleLoader__.load({
       const [form, setForm] = useState(null)     // what the user is editing
       const [efforts, setEfforts] = useState({ state: 'idle', list: [], defaultEffort: null })
       const [saveState, setSaveState] = useState({ state: 'idle', message: '' })
+      const [runs, setRuns] = useState([])
+      const [runsPick, setRunsPick] = useState(null)
+      const [runEntries, setRunEntries] = useState([])
       const [toast, setToast] = useState(null)
       const toastTimer = useRef(null)
 
@@ -1731,6 +1938,28 @@ window.__ModuleLoader__.load({
       }, [])
 
       useEffect(() => { load() }, [load])
+
+      /** Sessions that have an archived run, newest first. */
+      const loadRuns = useCallback(async () => {
+        try {
+          const response = await fetch(RUNS)
+          const payload = await response.json()
+          setRuns(Array.isArray(payload?.sessions) ? payload.sessions : [])
+        } catch { /* the section stays empty */ }
+      }, [])
+
+      const loadRun = useCallback(async (sessionId) => {
+        setRunsPick(sessionId)
+        try {
+          const response = await fetch(`${RUNS}?sessionId=${encodeURIComponent(sessionId)}`)
+          const payload = await response.json()
+          setRunEntries(Array.isArray(payload?.entries) ? payload.entries.slice(-400) : [])
+        } catch {
+          setRunEntries([])
+        }
+      }, [])
+
+      useEffect(() => { loadRuns() }, [loadRuns])
 
       /** Write the staged draft. The only path that changes stored settings. */
       const save = useCallback(async () => {
@@ -1882,6 +2111,45 @@ window.__ModuleLoader__.load({
               }),
               h('p', { className: 'dsh-op-hint' }, t('settings.effort.hint')))
             : null,
+          h('div', { className: 'dsh-op-field' },
+            h('div', { className: 'dsh-op-label' }, t('runs.title')),
+            h('p', { className: 'dsh-op-hint' }, t('runs.hint')),
+            runs.length === 0
+              ? h('div', { className: 'dsh-op-hint' }, t('runs.empty'))
+              : h('div', { className: 'dsh-op-runs' },
+                runs.map(entry => h('button', {
+                  key: entry.sessionId,
+                  type: 'button',
+                  className: 'dsh-op-runRow',
+                  'data-active': runsPick === entry.sessionId ? 'true' : 'false',
+                  onClick: () => loadRun(entry.sessionId),
+                },
+                h('span', { className: 'dsh-op-runId' }, entry.sessionId.replace(/^session-/, '').slice(0, 8)),
+                h('span', { className: 'dsh-op-runMeta' },
+                  `${entry.sent} ${t('runs.sent')} · ${entry.entries} ${t('runs.entries')}${entry.alive ? ` · ${t('runs.alive')}` : ''}`)))),
+            runsPick === null
+              ? null
+              : h('div', { className: 'dsh-op-runLog' },
+                runEntries.length === 0
+                  ? h('div', { className: 'dsh-op-hint' }, t('auto.trace.empty'))
+                  : runEntries.map((entry, index) => {
+                    const kind = entry.kind
+                    const tag = kind === 'round'
+                      ? `${t('auto.trace.think')} ${entry.round ?? ''}`
+                      : kind === 'tool'
+                        ? (entry.name ?? 'tool')
+                        : kind === 'sent'
+                          ? `${t('auto.trace.sent')} ${entry.round ?? ''}`
+                          : t('auto.trace.conclusion')
+                    const text = kind === 'tool'
+                      ? `${entry.summary ?? ''}${entry.text ? ` — ${entry.text}` : ''}`
+                      : (entry.reasoning || entry.text || '')
+                    return h('div', { key: index, className: 'dsh-op-thinkRow', 'data-kind': kind },
+                      h('div', { className: 'dsh-op-thinkMeta' },
+                        h('span', { className: 'dsh-op-thinkTag' }, tag),
+                        h('span', { className: 'dsh-op-thinkTime' }, String(entry.at ?? '').slice(5, 19))),
+                      h('div', { className: 'dsh-op-thinkBody' }, String(text).slice(0, 1000)))
+                  }))))),
           h('div', { className: 'dsh-op-footer' },
             h('button', {
               type: 'button',
@@ -1898,7 +2166,7 @@ window.__ModuleLoader__.load({
             h('span', {
               className: 'dsh-op-status',
               'data-state': dirty ? 'dirty' : saveState.state,
-            }, dirty ? t('settings.dirty') : saveState.message))),
+            }, dirty ? t('settings.dirty') : saveState.message)),
         toast === null
           ? null
           : h('div', { className: 'dsh-op-toast', role: 'status', 'aria-live': 'polite' },
@@ -1907,7 +2175,7 @@ window.__ModuleLoader__.load({
               fill: 'none', stroke: 'currentColor', strokeWidth: 1.8,
               strokeLinecap: 'round', strokeLinejoin: 'round',
             }, h('path', { d: 'M3 8.6 6.3 12 13 4.6' })),
-            h('span', null, toast)))
+            h('span', null, toast))
     }
 
     // ── plugin ──────────────────────────────────────────────────────────────
