@@ -269,6 +269,10 @@ window.__ModuleLoader__.load({
         'auto.stop.error': '运行中出错，已停止。',
         'auto.stop.session-gone': '会话已关闭，自动结束。',
         'auto.stop.busy': '助手还在处理上一条消息，先停下了。',
+        'auto.phase.done': '已完成',
+        'auto.phase.error': '出错',
+        'auto.phase.stopped': '已中断',
+        'auto.phase.hint': '点一下看详情',
         'auto.trace.show': '查看思考与调用',
         'auto.trace.hide': '收起思考与调用',
         'auto.trace.empty': '这个对话还没有自动运行记录。点「自动」并启动后，这里会实时显示它的思考和工具调用。',
@@ -406,6 +410,10 @@ window.__ModuleLoader__.load({
         'auto.stop.error': 'Stopped after an error.',
         'auto.stop.session-gone': 'Stopped: the session is gone.',
         'auto.stop.busy': 'Stopped: the assistant was still busy with the previous message.',
+        'auto.phase.done': 'Done',
+        'auto.phase.error': 'Failed',
+        'auto.phase.stopped': 'Stopped',
+        'auto.phase.hint': 'Click for details',
         'auto.trace.show': 'Show reasoning and calls',
         'auto.trace.hide': 'Hide reasoning and calls',
         'auto.trace.empty': 'No autopilot run in this conversation yet. Start one from Auto, and its reasoning and tool calls appear here live.',
@@ -500,6 +508,12 @@ window.__ModuleLoader__.load({
 .dsh-op-btn[data-state="done"][data-active="true"]{color:var(--dsw-alias-state-success-primary)}
 .dsh-op-btn[data-state="unchanged"][data-active="true"]{color:var(--dsw-alias-state-warn-primary)}
 .dsh-op-btn[data-state="error"][data-active="true"]{color:var(--dsw-alias-state-error-primary)}
+/* The autopilot button keeps its outcome visible after the run ends: a finished
+   loop is a fact about the session, not something to hide the moment it stops. */
+.dsh-op-btn[data-mode="auto"][data-state="done"]{color:var(--dsw-alias-state-success-primary)}
+.dsh-op-btn[data-mode="auto"][data-state="error"]{color:var(--dsw-alias-state-error-primary)}
+.dsh-op-btn[data-mode="auto"][data-state="stopped"]{color:var(--dsw-alias-state-warn-primary)}
+.dsh-op-btn[data-mode="auto"][data-state="running"]{color:var(--dsw-alias-brand-primary)}
 .dsh-op-icon{width:14px;height:14px;flex:none;display:block}
 .dsh-op-icon[data-spin="true"]{animation:dsh-op-spin 1s linear infinite}
 @keyframes dsh-op-spin{to{transform:rotate(360deg)}}
@@ -547,6 +561,10 @@ window.__ModuleLoader__.load({
 .dsh-op-radio--time{margin-top:2px;padding:8px 12px;align-items:center}
 .dsh-op-hint{margin:9px 0 0;font-size:11.5px;line-height:17px;color:var(--dsw-alias-label-secondary)}
 .dsh-op-hint--error{color:var(--dsw-alias-state-error-primary)}
+/* A failure can be a long multi-line string: keep it readable and bounded instead
+   of stretching the panel. */
+.dsh-op-hint--block{white-space:pre-wrap;word-break:break-word;max-height:140px;
+  overflow-y:auto;user-select:text}
 .dsh-op-hint--inline{margin:0;flex:none}
 .dsh-op-select{min-width:300px;max-width:100%;height:34px;padding:0 10px;border-radius:9px;
   border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);
@@ -1201,6 +1219,50 @@ window.__ModuleLoader__.load({
         return idle
       }
 
+      /**
+       * What the auto button reports about the last run.
+       *
+       * running  the loop is alive
+       * done     it finished with rounds or a met goal
+       * error    it died on something
+       * stopped  it was interrupted, or it parked waiting on a busy assistant
+       * idle     nothing has run in this session
+       *
+       * The colour on the button is the only always-visible signal that a
+       * long-running loop is over, so each outcome gets its own state instead of
+       * collapsing back to the same grey idle button.
+       */
+      const autoPhase = (() => {
+        if (pilot === null) return 'idle'
+        if (pilot.enabled === true) return 'running'
+        const reason = typeof pilot.stopReason === 'string' ? pilot.stopReason : ''
+        if (reason === 'error') return 'error'
+        if (reason === 'rounds' || reason === 'goal') return 'done'
+        if (reason === '' ) return 'idle'
+        return 'stopped'
+      })()
+
+      const autoLabel = (() => {
+        if (autoPhase === 'running') {
+          return `${t('auto.on')} ${pilot.round ?? 0}/${pilot.mode === 'goal' ? '∞' : (pilot.rounds ?? 5)}`
+        }
+        if (autoPhase === 'done') return t('auto.phase.done')
+        if (autoPhase === 'error') return t('auto.phase.error')
+        if (autoPhase === 'stopped') return t('auto.phase.stopped')
+        return t('auto.off')
+      })()
+
+      const autoTitle = (() => {
+        if (autoPhase === 'running') return t('auto.hint')
+        if (autoPhase === 'idle') return t('auto.hint')
+        const reason = typeof pilot?.stopReason === 'string' ? pilot.stopReason : ''
+        const detail = reason === '' ? '' : t(`auto.stop.${reason}`)
+        // After a run ends the tooltip carries the reason, and a failure carries
+        // the message too: those are exactly what the user wants before clicking.
+        const extra = typeof pilot?.error === 'string' && pilot.error !== '' ? ` · ${pilot.error}` : ''
+        return `${detail}${extra} · ${t('auto.phase.hint')}`
+      })()
+
       const iconFor = (mode) => {
         if (phase === 'running' && running === mode) return h(SpinnerIcon)
         if (phase === 'done' && lastMode === mode) return h(CheckIcon)
@@ -1243,14 +1305,18 @@ window.__ModuleLoader__.load({
             type: 'button',
             className: 'dsh-op-btn',
             'data-mode': 'auto',
-            'data-state': pilot !== null && pilot.enabled === true ? 'running' : 'idle',
+            // Four states, so the button itself reports how the last run ended.
+            'data-state': autoPhase,
+            'data-active': autoPhase === 'idle' ? 'false' : 'true',
             'aria-pressed': pilot !== null && pilot.enabled === true ? 'true' : 'false',
             'aria-expanded': autoOpen ? 'true' : 'false',
-            title: t('auto.hint'),
-            'aria-label': t('auto.hint'),
+            title: autoTitle,
+            'aria-label': autoTitle,
             onMouseDown: event => event.preventDefault(),
             onClick: () => {
-              // A second click on the same button closes the panel it opened.
+              // The same button closes the panel it opened. After a run ends, the
+              // first click opens the panel, which names the reason and offers the
+              // start control again.
               if (autoOpen) {
                 setAutoOpen(false)
                 publishConfirm(null)
@@ -1258,10 +1324,7 @@ window.__ModuleLoader__.load({
               }
               openPilot()
             },
-          }, h(LoopIcon), h('span', null,
-            pilot !== null && pilot.enabled === true
-              ? `${t('auto.on')} ${pilot.round ?? 0}/${pilot.mode === 'goal' ? '∞' : (pilot.rounds ?? 5)}`
-              : t('auto.off'))),
+          }, h(autoPhase === 'running' ? SpinnerIcon : LoopIcon), h('span', null, autoLabel)),
           autoOpen
             ? h('div', { className: 'dsh-op-pop' },
               pilot !== null && pilot.enabled === true
@@ -1396,7 +1459,7 @@ window.__ModuleLoader__.load({
                       }, t('auto.resume.discard')))
                     : null,
                   pilot !== null && typeof pilot.error === 'string' && pilot.error !== ''
-                    ? h('p', { className: 'dsh-op-hint dsh-op-hint--error' }, pilot.error)
+                    ? h('p', { className: 'dsh-op-hint dsh-op-hint--error dsh-op-hint--block' }, pilot.error)
                     : null,
                   // Why the last run ended. Without this a run that stops on its own
                   // looks like it switched itself off for no reason.
