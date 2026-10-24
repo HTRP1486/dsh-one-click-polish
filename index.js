@@ -1036,21 +1036,34 @@ async function explore(ctx, selection, input, research, job, agent, signal, syst
       tools,
       signal,
     })
+    // Live rows: one for this round's reasoning and one per tool call, created
+    // when the work starts and updated as chunks arrive. Without this the panel
+    // shows nothing until the whole round finishes, which on a slow model reads
+    // as a hung run.
+    const liveRound = beginLive(job, {
+      kind: 'round',
+      round,
+      reasoning: '',
+      text: '',
+      calls: [],
+    })
     for await (const chunk of stream) {
-      if (chunk?.type === 'text-delta' && typeof chunk.text === 'string') text += chunk.text
-      else if (chunk?.type === 'reasoning-delta' && typeof chunk.text === 'string') reasoning += chunk.text
-      else if (chunk?.type === 'block-end' && chunk.block !== undefined) blocks.push(chunk.block)
+      if (chunk?.type === 'text-delta' && typeof chunk.text === 'string') {
+        text += chunk.text
+        updateLive(job, liveRound, { text: text.trim().slice(0, 2000) })
+      } else if (chunk?.type === 'reasoning-delta' && typeof chunk.text === 'string') {
+        reasoning += chunk.text
+        updateLive(job, liveRound, { reasoning: reasoning.trim().slice(0, 1200) })
+      } else if (chunk?.type === 'block-end' && chunk.block !== undefined) blocks.push(chunk.block)
       else if (chunk?.type === 'finish') finish = chunk.reason
     }
     if (finish?.kind === 'error') throw new Error(finish.failure?.message ?? '检索失败')
     if (finish?.kind === 'aborted') throw new Error('检索已取消')
 
     const calls = blocks.filter(block => block.type === 'tool-call')
-    // Record what this round looked like, so the panel can show the reasoning
-    // and every call instead of only the final message.
-    trace(job, {
-      kind: calls.length === 0 ? 'conclusion' : 'round',
-      round,
+    // Settle this round's row with its final content and the calls it produced.
+    updateLive(job, liveRound, {
+      done: true,
       reasoning: reasoning.trim().slice(0, 1200),
       text: text.trim().slice(0, 2000),
       calls: calls.map(call => ({ name: call.name, arguments: String(call.arguments ?? '').slice(0, 300) })),
@@ -1067,12 +1080,20 @@ async function explore(ctx, selection, input, research, job, agent, signal, syst
       source: { kind: 'model', provider: selection.provider, model: selection.model },
     })
     for (const call of calls) {
-      const result = await runTool(ctx, agent, roots, call, signal)
-      markStep(job, 'explore', 'running', result.summary)
-      trace(job, {
+      // The row appears the moment the call starts, so a slow file read or web
+      // search is visible as work in progress rather than as a stalled window.
+      const row = beginLive(job, {
         kind: 'tool',
         round,
         name: call.name,
+        summary: '运行中…',
+        text: String(call.arguments ?? '').slice(0, 300),
+      })
+      markStep(job, 'explore', 'running', `调用 ${call.name}`)
+      const result = await runTool(ctx, agent, roots, call, signal)
+      markStep(job, 'explore', 'running', result.summary)
+      updateLive(job, row, {
+        done: true,
         summary: result.summary,
         text: String(result.text ?? '').slice(0, 600),
       })
@@ -1227,6 +1248,36 @@ function trace(job, entry) {
   // the settings page reads afterwards, so the same entry is archived per session.
   if (typeof job.sessionId === 'string' && job.sessionId !== '') {
     appendLog(job.sessionId, { run: job.id, ...entry })
+  }
+}
+
+/**
+ * Start a row that will be filled in while the model is still streaming.
+ *
+ * Returns the row's index in the trace array. The archive copy is written once,
+ * when the row settles, so a streaming run does not rewrite the log file on every
+ * token.
+ */
+function beginLive(job, entry) {
+  if (job === null) return -1
+  job.trace.push({ ...entry, at: Date.now(), live: true })
+  if (job.trace.length > TRACE_LIMIT) job.trace.shift()
+  return job.trace.length - 1
+}
+
+/** Patch a live row in place; the poller sees it on its next tick. */
+function updateLive(job, index, patch) {
+  if (job === null || index < 0 || index >= job.trace.length) return
+  const row = job.trace[index]
+  if (row === undefined || row.live !== true) return
+  Object.assign(row, patch)
+  if (patch.done === true) {
+    row.live = false
+    // Archive the finished row once, not once per token.
+    if (typeof job.sessionId === 'string' && job.sessionId !== '') {
+      const { live, done, ...rest } = row
+      appendLog(job.sessionId, { run: job.id, ...rest })
+    }
   }
 }
 
