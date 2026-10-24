@@ -1950,7 +1950,52 @@ async function composeNextPrompt(ctx, agent, selection, pilot, job, signal) {
   const answer = await explore(ctx, selection, input, pilot.research, job, agent, signal, DRIVER_SYSTEM)
   const text = answer.trim()
   if (/^DONE\b/i.test(text)) return { done: true, text: '' }
-  return { done: false, text: text === '' ? '' : text }
+
+  // The driver stopping mid-air is not a decision to finish. When the search came
+  // back with nothing to say, ask the model one more time with no tools and a
+  // plainer instruction, rather than propagating an empty message upward and
+  // letting the loop treat it as the end.
+  if (text === '') {
+    const retry = await askPlainly(ctx, selection, DRIVER_SYSTEM, [
+      '你要决定自动驾驶的下一步，但上一条回复是空的。',
+      '',
+      `目标：${goal}`,
+      `已经自动推进了 ${pilot.round} 轮。`,
+      '',
+      '对话历史：',
+      transcript.text,
+      '',
+      '请直接输出下一条要发给助手的用户消息正文（不要调用工具、不要解释、不要加前缀）。',
+      '如果你判断目标已经达成，就只输出 DONE。',
+    ].join('\n'), signal)
+    if (retry.trim() !== '') {
+      if (/^DONE\b/i.test(retry.trim())) return { done: true, text: '' }
+      return { done: false, text: retry.trim() }
+    }
+  }
+
+  return { done: false, text }
+
+}
+
+/** One plain completion with no tools attached, for when the tool loop stalls. */
+async function askPlainly(ctx, selection, system, input, signal) {
+  try {
+    let text = ''
+    const stream = ctx.llm.stream({
+      provider: selection.provider,
+      model: selection.model,
+      messages: [{ role: 'user', content: [{ type: 'text', text: input }] }],
+      system,
+      signal,
+    })
+    for await (const chunk of stream) {
+      if (chunk?.type === 'text-delta' && typeof chunk.text === 'string') text += chunk.text
+    }
+    return text
+  } catch {
+    return ''
+  }
 }
 
 /**
@@ -2049,19 +2094,19 @@ async function drivePilot(ctx, sessionId, agentRef, pilot) {
         pilot.stopReason = 'goal'
         break
       }
-      // An empty answer is usually a hiccup, not a decision: the model thought
-      // about it and produced no body (a truncated turn, a stray stop token). It
-      // used to end the run right there, which is why the autopilot seemed to
-      // switch itself off after thinking for a while. Ask again before giving up.
+      // An empty answer is usually a hiccup, not a decision: a truncated turn, a
+      // stray stop token, a search that spent its budget. It used to end the run
+      // right there. Three plain retries happen first, and only a fourth failure
+      // stops the loop — by then something is genuinely wrong.
       if (next.text === '') {
         pilot.emptyStreak = (pilot.emptyStreak ?? 0) + 1
-        if (pilot.emptyStreak <= 2) {
+        if (pilot.emptyStreak <= 3) {
           pilot.state = 'thinking'
           continue
         }
         pilot.state = 'empty'
         pilot.stopReason = 'empty'
-        pilot.error = '驱动 AI 连续返回空消息'
+        pilot.error = '驱动 AI 连续 3 次想不出下一步，已自行停下；点「继续」可以再试'
         break
       }
       pilot.emptyStreak = 0
