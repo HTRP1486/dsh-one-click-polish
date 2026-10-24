@@ -1844,7 +1844,7 @@ async function drivePilot(ctx, sessionId, agentRef, pilot) {
   // a driver is already running reuses it instead of forking a second one.
   if (pilot.running === true) return
   pilot.running = true
-  const job = createJob(`autopilot-${sessionId}`, 'polish', pilot.research === 'none' ? 'none' : pilot.research)
+  const job = createJob(`autopilot-${sessionId}`, 'polish', pilot.research === 'none' ? 'none' : pilot.research, sessionId)
   // A resumed run keeps the clock it already spent; a fresh one starts now.
   if (!(pilot.startedAt > 0)) pilot.startedAt = Date.now()
   /** Wall-clock budget spent; checked before each round so a round never half-runs. */

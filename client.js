@@ -697,12 +697,10 @@ window.__ModuleLoader__.load({
 .dsh-op-thinkRow[data-foldable="true"]:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .dsh-op-thinkCaret{flex:none;font-size:9px;line-height:1;color:var(--dsw-alias-label-secondary);
   width:9px;text-align:center}
-/* A live row is work in progress: a pulsing dot where the caret would be. */
-.dsh-op-thinkLive{flex:none;width:9px;text-align:center;font-size:9px;line-height:1;
-  color:var(--dsw-alias-state-success-primary);animation:dsh-op-pulse 1.1s ease-in-out infinite}
-@keyframes dsh-op-pulse{0%,100%{opacity:.35}50%{opacity:1}}
-@media (prefers-reduced-motion:reduce){.dsh-op-thinkLive{animation:none;opacity:1}}
-.dsh-op-thinkRow[data-live="true"] .dsh-op-thinkTag{color:var(--dsw-alias-state-success-primary)}
+/* The live marker is the same turning arc DSH uses for its own running work. */
+.dsh-op-thinkRow[data-live="true"] .dsh-op-icon{width:9px;height:9px;flex:none;
+  color:var(--dsw-alias-label-secondary)}
+.dsh-op-thinkRow[data-live="true"] .dsh-op-thinkTag{color:var(--dsw-alias-label-primary)}
 .dsh-op-thinkRow[data-foldable="true"][data-open="false"] .dsh-op-thinkBody{display:none}
 .dsh-op-thinkMeta{display:flex;align-items:baseline;gap:6px}
 /* Reasoning is the part worth reading, so it takes the brightest label. Tool
@@ -1683,13 +1681,17 @@ window.__ModuleLoader__.load({
           ? `${entry.summary ?? ''}${entry.text ? ` — ${entry.text}` : ''}`
           : (entry.reasoning || entry.text || '')
 
-        // Tool rows are the noisy ones: a long run makes dozens of them and the
-        // useful part is usually the one-line summary. They start folded and open
-        // on click; reasoning and sent messages stay readable. A live row is never
-        // folded — the whole point is watching it fill in.
+        // Two things fold: long tool rows (noise) and reasoning rows (long
+        // paragraphs worth skimming past). A live row never folds — the point of
+        // watching a run is seeing the text arrive.
         const live = entry.live === true
-        const foldable = !live && kind === 'tool' && String(body).length > 60
-        const open = openRows.has(index)
+        const long = String(body).length > 60
+        const foldable = !live && long && (kind === 'tool' || kind === 'round')
+        // Reasoning opens by default (it is the interesting part); tool calls start
+        // folded. `openRows` remembers the opposite of that default.
+        const defaultOpen = kind === 'round'
+        const toggled = openRows.has(index)
+        const open = defaultOpen ? !toggled : toggled
         return h('div', {
           key: index,
           className: 'dsh-op-thinkRow',
@@ -1706,8 +1708,9 @@ window.__ModuleLoader__.load({
             : undefined,
         },
         h('div', { className: 'dsh-op-thinkMeta' },
+          // Working state wears the same turning arc DSH uses for its own runs.
           live
-            ? h('span', { className: 'dsh-op-thinkLive', 'aria-hidden': 'true' }, '●')
+            ? h(SpinnerIcon)
             : foldable
               ? h('span', { className: 'dsh-op-thinkCaret', 'aria-hidden': 'true' }, open ? '▾' : '▸')
               : null,
@@ -2244,10 +2247,12 @@ window.__ModuleLoader__.load({
                     const text = kind === 'tool'
                       ? `${entry.summary ?? ''}${entry.text ? ` — ${entry.text}` : ''}`
                       : (entry.reasoning || entry.text || '')
-                    // Same rule as the window: tool rows fold to their summary and
-                    // open on click, so a long run stays scannable.
-                    const foldable = kind === 'tool' && String(text).length > 60
-                    const open = runOpen.has(index)
+                    // Same rule as the window: long tool rows and long reasoning
+                    // both fold, reasoning opening by default.
+                    const long = String(text).length > 60
+                    const foldable = long && (kind === 'tool' || kind === 'round')
+                    const toggled = runOpen.has(index)
+                    const open = kind === 'round' ? !toggled : toggled
                     return h('div', {
                       key: index,
                       className: 'dsh-op-thinkRow',
