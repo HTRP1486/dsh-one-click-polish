@@ -693,6 +693,11 @@ window.__ModuleLoader__.load({
 .dsh-op-thinkBodyScroll{flex:1;min-height:0;overflow-y:auto;padding:8px 10px;
   display:flex;flex-direction:column;gap:9px}
 .dsh-op-thinkRow{display:flex;flex-direction:column;gap:2px}
+.dsh-op-thinkRow[data-foldable="true"]{cursor:pointer;border-radius:6px;padding:2px 4px;margin:-2px -4px}
+.dsh-op-thinkRow[data-foldable="true"]:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dsh-op-thinkCaret{flex:none;font-size:9px;line-height:1;color:var(--dsw-alias-label-secondary);
+  width:9px;text-align:center}
+.dsh-op-thinkRow[data-foldable="true"][data-open="false"] .dsh-op-thinkBody{display:none}
 .dsh-op-thinkMeta{display:flex;align-items:baseline;gap:6px}
 .dsh-op-thinkTag{font-size:11px;font-weight:600;color:var(--dsw-alias-label-primary)}
 .dsh-op-thinkRow[data-kind="tool"] .dsh-op-thinkTag{color:var(--dsw-alias-brand-primary)}
@@ -1606,10 +1611,15 @@ window.__ModuleLoader__.load({
       const [collapsed, setCollapsed] = useState(false)
       const bodyRef = useRef(null)
       const pinnedRef = useRef(true)
+      // Which tool rows the user opened. A mutable set plus a tick keeps the list
+      // cheap: hundreds of rows must not each own a piece of React state.
+      const openRowsRef = useRef(new Set())
+      const openRows = openRowsRef.current
+      const [, setFoldTick] = useState(0)
 
-      // Follow the session's live run while the window is open. A brand-new
-      // conversation has no log of its own yet, so fall back to the most recent
-      // session that has one rather than showing an empty window.
+      // Follow the session's live run while the window is open. Only this
+      // conversation's own log is shown: an empty list is the honest state for a
+      // chat that has not run the autopilot yet.
       useEffect(() => {
         if (think.open !== true || think.sessionId === null) return undefined
         let cancelled = false
@@ -1659,11 +1669,34 @@ window.__ModuleLoader__.load({
         const body = kind === 'tool'
           ? `${entry.summary ?? ''}${entry.text ? ` — ${entry.text}` : ''}`
           : (entry.reasoning || entry.text || '')
-        return h('div', { key: index, className: 'dsh-op-thinkRow', 'data-kind': kind },
-          h('div', { className: 'dsh-op-thinkMeta' },
-            h('span', { className: 'dsh-op-thinkTag' }, tag),
-            entry.at === undefined ? null : h('span', { className: 'dsh-op-thinkTime' }, String(entry.at).slice(11, 19))),
-          h('div', { className: 'dsh-op-thinkBody' }, String(body).slice(0, 1500)))
+
+        // Tool rows are the noisy ones: a long run makes dozens of them and the
+        // useful part is usually the one-line summary. They start folded and open
+        // on click; reasoning and sent messages stay readable.
+        const foldable = kind === 'tool' && String(body).length > 60
+        const open = openRows.has(index)
+        return h('div', {
+          key: index,
+          className: 'dsh-op-thinkRow',
+          'data-kind': kind,
+          'data-foldable': foldable ? 'true' : 'false',
+          'data-open': foldable && open ? 'true' : 'false',
+          onClick: foldable
+            ? () => {
+              if (openRows.has(index)) openRows.delete(index)
+              else openRows.add(index)
+              setFoldTick(value => value + 1)
+            }
+            : undefined,
+        },
+        h('div', { className: 'dsh-op-thinkMeta' },
+          foldable
+            ? h('span', { className: 'dsh-op-thinkCaret', 'aria-hidden': 'true' }, open ? '▾' : '▸')
+            : null,
+          h('span', { className: 'dsh-op-thinkTag' }, tag),
+          entry.at === undefined ? null : h('span', { className: 'dsh-op-thinkTime' }, String(entry.at).slice(11, 19))),
+        h('div', { className: 'dsh-op-thinkBody' },
+          foldable && !open ? '' : String(body).slice(0, 1500)))
       })
 
       return h('div', { className: 'dsh-op-think', 'data-collapsed': collapsed ? 'true' : 'false' },
@@ -1935,6 +1968,11 @@ window.__ModuleLoader__.load({
       const [runs, setRuns] = useState([])
       const [runsPick, setRunsPick] = useState(null)
       const [runEntries, setRunEntries] = useState([])
+      // Folded tool rows in the log view: one set per rendered session, reset when
+      // another session is opened.
+      const runOpenRef = useRef(new Set())
+      const runOpen = runOpenRef.current
+      const [, setRunFoldTick] = useState(0)
       const [toast, setToast] = useState(null)
       const toastTimer = useRef(null)
 
@@ -1989,6 +2027,11 @@ window.__ModuleLoader__.load({
 
       const loadRun = useCallback(async (sessionId) => {
         setRunsPick(sessionId)
+        // A different session means a different list: folded rows from the last
+        // one must not carry over as spurious open indices. Clear in place — the
+        // renderer holds this same Set.
+        runOpen.clear()
+        setRunFoldTick(value => value + 1)
         try {
           const response = await fetch(`${RUNS}?sessionId=${encodeURIComponent(sessionId)}`)
           const payload = await response.json()
@@ -2183,11 +2226,32 @@ window.__ModuleLoader__.load({
                     const text = kind === 'tool'
                       ? `${entry.summary ?? ''}${entry.text ? ` — ${entry.text}` : ''}`
                       : (entry.reasoning || entry.text || '')
-                    return h('div', { key: index, className: 'dsh-op-thinkRow', 'data-kind': kind },
-                      h('div', { className: 'dsh-op-thinkMeta' },
-                        h('span', { className: 'dsh-op-thinkTag' }, tag),
-                        h('span', { className: 'dsh-op-thinkTime' }, String(entry.at ?? '').slice(5, 19))),
-                      h('div', { className: 'dsh-op-thinkBody' }, String(text).slice(0, 1000)))
+                    // Same rule as the window: tool rows fold to their summary and
+                    // open on click, so a long run stays scannable.
+                    const foldable = kind === 'tool' && String(text).length > 60
+                    const open = runOpen.has(index)
+                    return h('div', {
+                      key: index,
+                      className: 'dsh-op-thinkRow',
+                      'data-kind': kind,
+                      'data-foldable': foldable ? 'true' : 'false',
+                      'data-open': foldable && open ? 'true' : 'false',
+                      onClick: foldable
+                        ? () => {
+                          if (runOpen.has(index)) runOpen.delete(index)
+                          else runOpen.add(index)
+                          setRunFoldTick(value => value + 1)
+                        }
+                        : undefined,
+                    },
+                    h('div', { className: 'dsh-op-thinkMeta' },
+                      foldable
+                        ? h('span', { className: 'dsh-op-thinkCaret', 'aria-hidden': 'true' }, open ? '▾' : '▸')
+                        : null,
+                      h('span', { className: 'dsh-op-thinkTag' }, tag),
+                      h('span', { className: 'dsh-op-thinkTime' }, String(entry.at ?? '').slice(5, 19))),
+                    h('div', { className: 'dsh-op-thinkBody' },
+                      foldable && !open ? '' : String(text).slice(0, 1000)))
                   })))),
           h('div', { className: 'dsh-op-footer' },
             h('button', {
