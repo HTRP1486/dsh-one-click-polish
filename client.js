@@ -699,8 +699,13 @@ window.__ModuleLoader__.load({
   width:9px;text-align:center}
 .dsh-op-thinkRow[data-foldable="true"][data-open="false"] .dsh-op-thinkBody{display:none}
 .dsh-op-thinkMeta{display:flex;align-items:baseline;gap:6px}
+/* Reasoning is the part worth reading, so it takes the brightest label. Tool
+   calls are machinery: they sit a step down in tone and never compete with the
+   thinking above them. */
 .dsh-op-thinkTag{font-size:11px;font-weight:600;color:var(--dsw-alias-label-primary)}
-.dsh-op-thinkRow[data-kind="tool"] .dsh-op-thinkTag{color:var(--dsw-alias-brand-primary)}
+.dsh-op-thinkRow[data-kind="tool"] .dsh-op-thinkTag{
+  color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));font-weight:500}
+.dsh-op-thinkRow[data-kind="tool"] .dsh-op-thinkBody{opacity:.72}
 .dsh-op-thinkRow[data-kind="sent"] .dsh-op-thinkTag{color:var(--dsw-alias-state-success-primary)}
 .dsh-op-thinkRow[data-kind="conclusion"] .dsh-op-thinkTag{color:var(--dsw-alias-state-warn-primary)}
 .dsh-op-thinkTime{margin-left:auto;font-size:10px;color:var(--dsw-alias-label-secondary);opacity:.8}
@@ -835,8 +840,9 @@ window.__ModuleLoader__.load({
         if (sessionId === undefined || sessionId === null || String(sessionId) === '') return
         const current = String(sessionId)
         if (thinkState.sessionId === current) return
+        report('think-retarget', { from: thinkState.sessionId, to: current })
         publishThink({ open: true, sessionId: current })
-      }, [sessionId, think.open])
+      }, [sessionId, think.open, think.sessionId])
 
       const cycleStrength = useCallback(() => {
         setStrength(previous => {
