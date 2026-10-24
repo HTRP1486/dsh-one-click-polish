@@ -673,19 +673,22 @@ window.__ModuleLoader__.load({
 .dsh-op-traceRow[data-kind="sent"] .dsh-op-traceTag{color:var(--dsw-alias-state-success-primary)}
 .dsh-op-traceRow[data-kind="conclusion"] .dsh-op-traceTag{color:var(--dsw-alias-state-warn-primary)}
 .dsh-op-traceText{white-space:pre-wrap;word-break:break-word;opacity:.9}
-.dsh-op-think{position:fixed;top:12px;right:12px;bottom:12px;z-index:1400;width:340px;max-width:42vw;
-  display:flex;flex-direction:column;border-radius:var(--dsw-radius-panel);
+.dsh-op-think{position:fixed;top:64px;right:16px;z-index:1400;width:300px;max-width:38vw;
+  max-height:min(420px,60vh);display:flex;flex-direction:column;border-radius:var(--dsw-radius-panel);
   background:var(--dsw-alias-bg-layer-2);border:.5px solid var(--dsw-alias-border-l2);
   --dsw-elevation-stroke-color:var(--dsw-alias-border-l1);
   box-shadow:var(--dsw-elevation-prominent);color:var(--dsw-alias-label-primary);
   font-size:12px;line-height:17px;overflow:hidden}
-.dsh-op-think[data-collapsed="true"]{bottom:auto;height:auto}
+.dsh-op-think[data-collapsed="true"]{max-height:none}
 .dsh-op-thinkHead{display:flex;align-items:center;gap:8px;padding:9px 10px;
   border-bottom:1px solid var(--dsw-alias-border-l1);flex:none}
 .dsh-op-thinkTitle{font-size:12.5px;font-weight:600;flex:1;min-width:0;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dsh-op-thinkCount{flex:none;font-size:11px;color:var(--dsw-alias-label-secondary);
   background:var(--dsw-alias-bg-base);border-radius:999px;padding:1px 7px}
+.dsh-op-thinkFrom{flex:none;font-size:10px;font-family:ui-monospace,monospace;
+  color:var(--dsw-alias-label-secondary);opacity:.75;
+  background:var(--dsw-alias-bg-base);border-radius:999px;padding:1px 6px}
 .dsh-op-thinkBtn{flex:none;width:22px;height:22px;border:none;border-radius:6px;cursor:pointer;
   background:transparent;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:1;
   display:grid;place-items:center}
@@ -1591,10 +1594,13 @@ window.__ModuleLoader__.load({
       const [entries, setEntries] = useState([])
       const [status, setStatus] = useState('idle')
       const [collapsed, setCollapsed] = useState(false)
+      const [sourceSession, setSourceSession] = useState(null)
       const bodyRef = useRef(null)
       const pinnedRef = useRef(true)
 
-      // Follow the session's live run while the window is open.
+      // Follow the session's live run while the window is open. A brand-new
+      // conversation has no log of its own yet, so fall back to the most recent
+      // session that has one rather than showing an empty window.
       useEffect(() => {
         if (think.open !== true || think.sessionId === null) return undefined
         let cancelled = false
@@ -1603,8 +1609,24 @@ window.__ModuleLoader__.load({
             const response = await fetch(`${RUNS}?sessionId=${encodeURIComponent(think.sessionId)}`)
             const payload = await response.json()
             if (cancelled) return
-            const list = Array.isArray(payload?.entries) ? payload.entries : []
+            let list = Array.isArray(payload?.entries) ? payload.entries : []
+            let source = think.sessionId
+            if (list.length === 0) {
+              // Nothing for this conversation: show the newest archived run.
+              const all = await fetch(RUNS).then(r => r.json()).catch(() => null)
+              const first = Array.isArray(all?.sessions) ? all.sessions[0] : null
+              if (first !== null && first.sessionId !== think.sessionId) {
+                const fallback = await fetch(`${RUNS}?sessionId=${encodeURIComponent(first.sessionId)}`)
+                  .then(r => r.json()).catch(() => null)
+                if (Array.isArray(fallback?.entries) && fallback.entries.length > 0) {
+                  list = fallback.entries
+                  source = first.sessionId
+                }
+              }
+            }
+            if (cancelled) return
             setEntries(list.slice(-300))
+            setSourceSession(list.length === 0 ? null : source)
             setStatus('ready')
           } catch {
             if (!cancelled) setStatus('error')
@@ -1652,6 +1674,10 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'dsh-op-think', 'data-collapsed': collapsed ? 'true' : 'false' },
         h('div', { className: 'dsh-op-thinkHead' },
           h('span', { className: 'dsh-op-thinkTitle' }, t('auto.trace.title')),
+          sourceSession !== null && sourceSession !== think.sessionId
+            ? h('span', { className: 'dsh-op-thinkFrom', title: sourceSession },
+              String(sourceSession).replace(/^session-/, '').slice(0, 6))
+            : null,
           h('span', { className: 'dsh-op-thinkCount' }, `${rows.length}`),
           h('button', {
             type: 'button',
