@@ -1747,16 +1747,36 @@ function pilotOf(sessionId) {
  * traffic: a busy turn is mostly tool calls and tool results, so a plain "last
  * N entries" window is often 90% tool noise and reads as an empty conversation.
  */
-function transcriptOf(session, limit = 16) {
+/**
+ * The conversation as the driver should see it.
+ *
+ * Three separate cuts used to stack up — the newest 16 messages, 700 characters
+ * each, then 4000 for the whole transcript — so arming the autopilot halfway
+ * through a long conversation silently dropped its beginning, and the driver
+ * decided "the next step" without knowing what the first half had already done.
+ *
+ * Now the budget is spent where it matters: the most recent turns keep their full
+ * text, and everything older survives as a compressed tail of one-liners. When
+ * even that does not fit, the oldest goes first and the transcript says how much
+ * it had to drop instead of pretending the conversation started mid-sentence.
+ */
+function transcriptOf(session, options = {}) {
+  const recentCount = options.recent ?? 24
+  const olderCount = options.older ?? 40
+  const totalChars = options.chars ?? 12000
+  const perRecent = options.perRecent ?? 1200
+  const perOlder = options.perOlder ?? 240
+
   let messages = []
   try {
     messages = session.deriveMessages()
   } catch {
-    return { text: '(无法读取对话历史)', count: 0 }
+    return { text: '(无法读取对话历史)', count: 0, dropped: 0 }
   }
-  const lines = []
-  for (let index = messages.length - 1; index >= 0 && lines.length < limit; index -= 1) {
-    const message = messages[index]
+
+  // Every usable turn, oldest first.
+  const turns = []
+  for (const message of messages) {
     const who = message.role === 'user' ? '用户' : message.role === 'assistant' ? '助手' : null
     if (who === null) continue
     const text = (message.content ?? [])
@@ -1766,10 +1786,49 @@ function transcriptOf(session, limit = 16) {
       .replace(/\s+/g, ' ')
       .trim()
     if (text === '') continue
-    lines.push(`${who}：${text.slice(0, 700)}`)
+    turns.push({ who, text })
   }
-  lines.reverse()
-  return { text: lines.join('\n\n') || '(对话还是空的)', count: lines.length }
+  if (turns.length === 0) return { text: '(对话还是空的)', count: 0, dropped: 0 }
+
+  const recent = turns.slice(-recentCount)
+  const older = turns.slice(0, Math.max(0, turns.length - recentCount))
+
+  let used = 0
+  let dropped = 0
+  // Recent turns keep their text, and they are spent first — they are what the
+  // driver is deciding the next step *from*.
+  const keptRecent = []
+  for (let index = recent.length - 1; index >= 0; index -= 1) {
+    const turn = recent[index]
+    const text = turn.text.slice(0, perRecent)
+    const line = `${turn.who}：${text}`
+    if (used + line.length > totalChars && keptRecent.length > 0) break
+    keptRecent.push(line)
+    used += line.length
+  }
+  keptRecent.reverse()
+
+  // Older turns are context, not content: one compressed line each. They are read
+  // oldest-first, because the beginning of a conversation is what a driver armed
+  // halfway through most needs — what was the original ask. The middle is what
+  // gets dropped, and the transcript says so.
+  const keptOlder = []
+  for (const turn of older) {
+    const head = turn.text.slice(0, perOlder)
+    const line = `${turn.who}：${head}${turn.text.length > perOlder ? '…' : ''}`
+    if (used + line.length > totalChars) { dropped += 1; continue }
+    keptOlder.push(line)
+    used += line.length
+  }
+
+  const parts = []
+  if (keptOlder.length > 0) {
+    parts.push('[更早的对话（压缩）]', keptOlder.join('\n'), '')
+  }
+  if (dropped > 0) parts.push(`[中间省略了 ${dropped} 条较早的消息]`, '')
+  parts.push(keptRecent.join('\n\n'))
+
+  return { text: parts.join('\n').trim(), count: turns.length, dropped }
 }
 
 /** Seconds the provider asked us to wait, when the failure was a rate limit. */
@@ -1809,8 +1868,14 @@ async function composeNextPromptRetrying(ctx, agent, selection, pilot, job, sign
 async function composeNextPrompt(ctx, agent, selection, pilot, job, signal) {
   const goal = pilot.goal === '' ? '（没有写明确目标，按对话的自然下一步推进）' : pilot.goal
   const transcript = transcriptOf(agent.session)
-  // Keep what the driver actually saw, so the panel can show it.
-  pilot.context = { messages: transcript.count, chars: transcript.text.length, text: transcript.text.slice(0, 4000) }
+  // Keep what the driver actually saw, so the panel can show it. The transcript
+  // already bounded itself, so this only caps what the panel renders.
+  pilot.context = {
+    messages: transcript.count,
+    chars: transcript.text.length,
+    dropped: transcript.dropped ?? 0,
+    text: transcript.text.slice(0, 6000),
+  }
   const input = [
     `目标：${goal}`,
     `已经自动推进了 ${pilot.round} 轮。`,

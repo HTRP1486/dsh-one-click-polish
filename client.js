@@ -260,6 +260,8 @@ window.__ModuleLoader__.load({
         'auto.context.messages': '条消息',
         'auto.context.chars': '字',
         'auto.context.show': '查看驱动 AI 读到的上下文',
+        'auto.context.dropped': '压缩省略',
+        'auto.context.droppedUnit': '条',
         'auto.trace.show': '查看思考与调用',
         'auto.trace.hide': '收起思考与调用',
         'auto.trace.empty': '这个对话还没有自动运行记录。点「自动」并启动后，这里会实时显示它的思考和工具调用。',
@@ -388,6 +390,8 @@ window.__ModuleLoader__.load({
         'auto.context.messages': 'messages',
         'auto.context.chars': 'chars',
         'auto.context.show': 'Show what the driver read',
+        'auto.context.dropped': 'compressed',
+        'auto.context.droppedUnit': 'messages',
         'auto.trace.show': 'Show reasoning and calls',
         'auto.trace.hide': 'Hide reasoning and calls',
         'auto.trace.empty': 'No autopilot run in this conversation yet. Start one from Auto, and its reasoning and tool calls appear here live.',
@@ -1252,7 +1256,13 @@ window.__ModuleLoader__.load({
                     `${t('auto.running')} ${pilot.round ?? 0}/${pilot.mode === 'goal' ? '∞' : (pilot.rounds ?? 5)}${pilot.limitMs > 0 ? ` · ${t('auto.elapsed')} ${Math.max(0, Math.round((Date.now() - (pilot.startedAt ?? Date.now())) / 60000))}${t('auto.minutes')}` : ''}`),
                   pilot.context !== null && pilot.context !== undefined
                     ? h('div', { className: 'dsh-op-hint' },
-                      `${t('auto.context')}：${pilot.context.messages} ${t('auto.context.messages')} / ${pilot.context.chars} ${t('auto.context.chars')}`)
+                      `${t('auto.context')}：${pilot.context.messages} ${t('auto.context.messages')} / ${pilot.context.chars} ${t('auto.context.chars')}`,
+                      // Say when the transcript had to compress: a driver that lost
+                      // part of the conversation should not look like one that saw
+                      // all of it.
+                      pilot.context.dropped > 0
+                        ? ` · ${t('auto.context.dropped')} ${pilot.context.dropped} ${t('auto.context.droppedUnit')}`
+                        : '')
                     : null,
                   pilot.lastPrompt ? h('p', { className: 'dsh-op-hint' }, pilot.lastPrompt.slice(0, 120)) : null,
                   h('button', {
