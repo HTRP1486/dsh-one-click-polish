@@ -279,6 +279,7 @@ window.__ModuleLoader__.load({
         'runs.sent': '条已发送',
         'runs.entries': '条记录',
         'runs.alive': '会话在运行',
+        'settings.renderFailed': '这个页面渲染出错',
         'auto.resume.found': '上次中断的自动运行',
         'auto.resume.action': '从中断处继续',
         'auto.resume.discard': '丢弃',
@@ -406,6 +407,7 @@ window.__ModuleLoader__.load({
         'runs.sent': 'sent',
         'runs.entries': 'entries',
         'runs.alive': 'session live',
+        'settings.renderFailed': 'This page failed to render',
         'auto.resume.found': 'Interrupted run from last time',
         'auto.resume.action': 'Resume where it stopped',
         'auto.resume.discard': 'Discard',
@@ -1932,8 +1934,12 @@ window.__ModuleLoader__.load({
           setSaveState({ state: 'idle', message: '' })
           setStatus('ready')
         } catch (failure) {
-          setError(String(failure?.message ?? failure))
+          const message = String(failure?.message ?? failure)
+          setError(message)
           setStatus('error')
+          // A failed settings load leaves the page almost empty, so record why in
+          // the Host's diagnostic log, which is reachable without devtools.
+          report('settings-load-failed', { message, url: SETTINGS })
         }
       }, [])
 
@@ -2071,7 +2077,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'dsh-op-radioTitle' }, title),
           note === undefined ? null : h('span', { className: 'dsh-op-radioNote' }, note)))
 
-      return h('div', { className: 'dsh-op-page' },
+      const pageBody = h('div', { className: 'dsh-op-page' },
         h('div', { className: 'dsh-op-head' },
           h('h2', { className: 'dsh-op-h2' }, t('settings.title')),
           h('p', { className: 'dsh-op-sub' }, t('settings.sub'))),
@@ -2149,7 +2155,7 @@ window.__ModuleLoader__.load({
                         h('span', { className: 'dsh-op-thinkTag' }, tag),
                         h('span', { className: 'dsh-op-thinkTime' }, String(entry.at ?? '').slice(5, 19))),
                       h('div', { className: 'dsh-op-thinkBody' }, String(text).slice(0, 1000)))
-                  }))))),
+                  })))),
           h('div', { className: 'dsh-op-footer' },
             h('button', {
               type: 'button',
@@ -2175,7 +2181,14 @@ window.__ModuleLoader__.load({
               fill: 'none', stroke: 'currentColor', strokeWidth: 1.8,
               strokeLinecap: 'round', strokeLinejoin: 'round',
             }, h('path', { d: 'M3 8.6 6.3 12 13 4.6' })),
-            h('span', null, toast))
+            h('span', null, toast)))
+      try {
+        return pageBody
+      } catch (failure) {
+        return h('div', { className: 'dsh-op-page' },
+          h('p', { className: 'dsh-op-sub dsh-op-hint--error' },
+            `${t('settings.renderFailed')}: ${String(failure?.message ?? failure)}`))
+      }
     }
 
     // ── plugin ──────────────────────────────────────────────────────────────

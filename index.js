@@ -1129,6 +1129,26 @@ async function diagRoute(ctx, req, res) {
     baseDir,
     processCwd: process.cwd(),
     searchRoots: allowedRoots(ctx, ctx.agents.list()[0]),
+    // Whether the browser half is actually in the composed boot graph. A blank
+    // settings page with a working Host is usually a client entry that never made
+    // it into the graph, or one whose bundle URL 404s.
+    client: (() => {
+      const modules = ctx.get('clientModules')
+      if (modules === undefined) return { available: false }
+      try {
+        const graph = modules.graph()
+        return {
+          available: true,
+          rev: graph.rev,
+          total: graph.entries.length,
+          mine: graph.entries
+            .filter(entry => String(entry.id).includes('one-click-polish'))
+            .map(entry => ({ id: entry.id, url: entry.url, rev: entry.rev })),
+        }
+      } catch (failure) {
+        return { available: true, error: textOf(failure) }
+      }
+    })(),
     transcript: (() => {
       const first = ctx.agents.list()[0]
       if (first === undefined) return null
