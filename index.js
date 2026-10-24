@@ -1746,6 +1746,9 @@ function pilotOf(sessionId) {
   const fresh = {
     sessionId,
     enabled: false,
+    // The key this pilot is filed under. Checkpoints are written per session, so
+    // without it `rememberPilot` would file every run under `undefined`.
+    sessionId,
     mode: 'rounds',
     rounds: 5,
     goal: '',
@@ -2058,8 +2061,24 @@ async function drivePilot(ctx, sessionId, agentRef, pilot) {
     pilot.enabled = false
     pilot.running = false
     if (pilot.state === 'running') pilot.state = 'stopped'
-    // Finished or stopped by hand: nothing left to offer after a restart.
-    forgetPilot(sessionId)
+    // No recorded reason means the user paused the loop, which is exactly the case
+    // that must stay resumable; every other exit already named its reason.
+    if (pilot.stopReason === null || pilot.stopReason === undefined) pilot.stopReason = 'stopped'
+    // Keep the checkpoint when the run was interrupted rather than completed: a
+    // stop is a pause the user can resume. Reaching the goal, the round cap, or an
+    // error is an ending, and there is nothing left to resume from.
+    const resumable = pilot.stopReason === 'stopped' || pilot.stopReason === 'busy'
+    if (resumable) rememberPilot(pilot)
+    else forgetPilot(sessionId)
+    // Diagnosable after the fact: the checkpoint file is the only state a resume
+    // depends on, so which way this branch went is worth seeing in the log.
+    if (typeof pilot.sessionId === 'string' && pilot.sessionId !== '') {
+      appendLog(pilot.sessionId, {
+        run: job?.id ?? '',
+        kind: 'conclusion',
+        text: `pilot 结束：stopReason=${String(pilot.stopReason)} state=${String(pilot.state)} 可续跑=${resumable}`,
+      })
+    }
   }
 }
 
@@ -2115,15 +2134,18 @@ async function autopilotRoute(ctx, settings, req, res) {
   if (body?.enabled !== true) {
     pilot.enabled = false
     pilot.state = 'stopped'
-    // A plain stop keeps the outcome on the pilot so the button can still say why
-    // it ended; `clear` is the explicit "forget this run" that returns it to idle.
+    pilot.stopReason = pilot.stopReason ?? 'stopped'
+    // `clear` is the explicit "forget this run": it drops the checkpoint and the
+    // pilot, so the button returns to a plain grey idle.
     if (body?.clear === true) {
       forgetPilot(sessionId)
       pilots.delete(sessionId)
       sendJson(res, 200, { ok: true, pilot: null })
       return
     }
-    forgetPilot(sessionId)
+    // A plain stop is a pause, not an ending: keep the checkpoint so 「继续」 can
+    // pick up at the round it reached instead of starting over.
+    rememberPilot(pilot)
     sendJson(res, 200, { ok: true, pilot })
     return
   }

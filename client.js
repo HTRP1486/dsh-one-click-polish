@@ -1423,14 +1423,38 @@ window.__ModuleLoader__.load({
                       ? h(React.Fragment, null,
                         h('button', { type: 'button', className: 'dsh-op-btn', onClick: interruptPilot }, t('auto.interrupt')),
                         h('button', { type: 'button', className: 'dsh-op-btn dsh-op-btn--danger', onClick: stopPilot }, t('auto.stop')))
-                      // After it ends, the useful action is to run again — with the
-                      // same settings the panel already holds.
+                      // An interrupted run resumes where it stopped, keeping the
+                      // rounds it already spent; only an interrupted-to-completion
+                      // (done or error) needs a fresh start.
                       : h(React.Fragment, null,
                         h('button', {
                           type: 'button',
                           className: 'dsh-op-btn dsh-op-btn--wide',
-                          onClick: () => { void startPilot() },
-                        }, t('auto.restart')),
+                          onClick: () => {
+                            // Resume keeps the count and the clock; the Host reads
+                            // the checkpoint it stored for this session.
+                            void fetch(PILOT, {
+                              method: 'POST',
+                              headers: { 'content-type': 'application/json' },
+                              body: JSON.stringify({
+                                sessionId: String(sessionId),
+                                enabled: true,
+                                resume: true,
+                                mode: autoDraft.mode,
+                                rounds: autoDraft.rounds,
+                                goal: autoDraft.goal,
+                                limitMinutes: autoDraft.limitMinutes,
+                                strength,
+                              }),
+                            }).then(async response => {
+                              const payload = await response.json()
+                              if (payload?.ok === true) {
+                                setPilot(payload.pilot)
+                                setAutoOpen(false)
+                              }
+                            }).catch(() => {})
+                          },
+                        }, autoPhase === 'stopped' ? t('auto.resume.action') : t('auto.restart')),
                         h('button', {
                           type: 'button',
                           className: 'dsh-op-link',
