@@ -554,15 +554,39 @@ window.__ModuleLoader__.load({
 .dsh-op-radio input{position:absolute;opacity:0;pointer-events:none}
 .dsh-op-radioMark{flex:0 0 16px;width:16px;height:16px;margin-top:1px;border-radius:50%;
   border:1.5px solid var(--dsw-alias-border-l2);display:grid;place-items:center;
-  transition:border-color .12s}
-.dsh-op-radioMark::after{content:"";width:8px;height:8px;border-radius:50%;transform:scale(0);
-  background:var(--dsw-alias-brand-primary);transition:transform .12s}
+  transition:border-color .16s ease}
+.dsh-op-radioDot{width:8px;height:8px;border-radius:50%;background:var(--dsw-alias-brand-primary);
+  transform:scale(0);transition:transform .18s cubic-bezier(.22,1,.36,1)}
 .dsh-op-radio:has(input:checked) .dsh-op-radioMark{border-color:var(--dsw-alias-brand-primary)}
-.dsh-op-radio:has(input:checked) .dsh-op-radioMark::after{transform:scale(1)}
+.dsh-op-radio:has(input:checked) .dsh-op-radioDot{transform:scale(1)}
+@media (prefers-reduced-motion:reduce){.dsh-op-radioDot{transition:none}}
 .dsh-op-radioText{display:flex;flex-direction:column;gap:2px;min-width:0}
 .dsh-op-radioTitle{font-weight:500}
 .dsh-op-radioNote{font-size:11.5px;line-height:16px;color:var(--dsw-alias-label-secondary)}
 .dsh-op-radio--time{margin-top:2px;padding:8px 12px;align-items:center}
+/* A slider switch: the marker travels instead of blinking on. Used wherever a row
+   turns a behaviour on rather than picking one of several. */
+.dsh-op-switch{position:relative;display:flex;align-items:center;gap:9px;padding:9px 12px;
+  font-size:13px;line-height:18px;cursor:pointer;user-select:none;
+  border:1px solid var(--dsw-alias-border-l1);border-radius:10px;
+  background:var(--dsw-alias-bg-base);transition:border-color .16s,background .16s}
+.dsh-op-switch:hover{border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-interactive-bg-hover)}
+.dsh-op-switch:has(input:checked){border-color:var(--dsw-alias-brand-primary);
+  background:var(--dsw-alias-bg-layer-2)}
+.dsh-op-switch:has(input:focus-visible){outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
+.dsh-op-switch input{position:absolute;opacity:0;pointer-events:none}
+.dsh-op-switchTrack{flex:0 0 32px;width:32px;height:18px;border-radius:999px;position:relative;
+  background:var(--dsw-alias-border-l2);transition:background .18s ease}
+.dsh-op-switchThumb{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
+  background:var(--dsw-alias-bg-layer-2);box-shadow:0 1px 2px rgba(0,0,0,.28);
+  transform:translateX(0);transition:transform .2s cubic-bezier(.22,1,.36,1),background .18s}
+.dsh-op-switch:has(input:checked) .dsh-op-switchTrack{background:var(--dsw-alias-brand-primary)}
+.dsh-op-switch:has(input:checked) .dsh-op-switchThumb{transform:translateX(14px);
+  background:#fff}
+@media (prefers-reduced-motion:reduce){
+  .dsh-op-switchTrack,.dsh-op-switchThumb{transition:none}
+}
+.dsh-op-switchText{flex:1;min-width:0}
 .dsh-op-hint{margin:9px 0 0;font-size:11.5px;line-height:17px;color:var(--dsw-alias-label-secondary)}
 .dsh-op-hint--error{color:var(--dsw-alias-state-error-primary)}
 /* A failure can be a long multi-line string: keep it readable and bounded instead
@@ -696,7 +720,15 @@ window.__ModuleLoader__.load({
   border:.5px solid var(--dsw-alias-border-l2);
   --dsw-elevation-stroke-color:var(--dsw-alias-border-l1);
   background:var(--dsw-alias-bg-layer-2);box-shadow:var(--dsw-elevation-prominent);
-  color:var(--dsw-alias-label-primary);font-size:12px;line-height:18px}
+  color:var(--dsw-alias-label-primary);font-size:12px;line-height:18px;
+  /* Opens upward from the button it belongs to, so the panel reads as attached. */
+  transform-origin:bottom right;
+  animation:dsh-op-pop-in .17s cubic-bezier(.22,1,.36,1) both}
+@keyframes dsh-op-pop-in{
+  from{opacity:0;transform:translateY(6px) scale(.97)}
+  to{opacity:1;transform:translateY(0) scale(1)}
+}
+@media (prefers-reduced-motion:reduce){.dsh-op-pop{animation:none}}
 .dsh-op-popTitle{font-size:13px;font-weight:500;line-height:20px}
 .dsh-op-btn--danger{color:var(--dsw-alias-state-error-primary)}
 .dsh-op-btn--wide{width:100%;justify-content:center;margin-top:2px}
@@ -718,8 +750,24 @@ window.__ModuleLoader__.load({
   background:var(--dsw-alias-bg-layer-2);border:.5px solid var(--dsw-alias-border-l2);
   --dsw-elevation-stroke-color:var(--dsw-alias-border-l1);
   box-shadow:var(--dsw-elevation-prominent);color:var(--dsw-alias-label-primary);
-  font-size:12px;line-height:17px;overflow:hidden}
-.dsh-op-think[data-collapsed="true"]{max-height:none}
+  font-size:12px;line-height:17px;overflow:hidden;
+  /* Slides in from the right edge instead of appearing whole, and collapses with
+     a height transition so opening and folding both read as the same object. */
+  animation:dsh-op-think-in .2s cubic-bezier(.22,1,.36,1) both;
+  transition:max-height .18s ease}
+@keyframes dsh-op-think-in{
+  from{opacity:0;transform:translateX(18px) scale(.985)}
+  to{opacity:1;transform:translateX(0) scale(1)}
+}
+@media (prefers-reduced-motion:reduce){
+  .dsh-op-think{animation:none;transition:none}
+}
+/* Folded: only the header bar remains, and the body scrolls away instead of being
+   torn off, so the same element appears to shrink. */
+.dsh-op-think[data-collapsed="true"]{max-height:38px}
+.dsh-op-think[data-collapsed="true"] .dsh-op-thinkBodyScroll{
+  opacity:0;transform:translateY(-4px);pointer-events:none}
+.dsh-op-thinkBodyScroll{transition:opacity .16s ease,transform .16s ease}
 .dsh-op-thinkHead{display:flex;align-items:center;gap:8px;padding:9px 10px;
   border-bottom:1px solid var(--dsw-alias-border-l1);flex:none}
 .dsh-op-thinkTitle{font-size:12.5px;font-weight:600;flex:1;min-width:0;
@@ -1545,7 +1593,7 @@ window.__ModuleLoader__.load({
                       }),
                     })
                     : null,
-                  h('label', { className: 'dsh-op-radio dsh-op-radio--time' },
+                  h('label', { className: 'dsh-op-switch' },
                     h('input', {
                       type: 'checkbox',
                       checked: (autoDraft.limitMinutes ?? 0) > 0,
@@ -1554,7 +1602,9 @@ window.__ModuleLoader__.load({
                         limitMinutes: event.target.checked ? 30 : 0,
                       }),
                     }),
-                    h('span', null, t('auto.limit'))),
+                    h('span', { className: 'dsh-op-switchTrack', 'aria-hidden': 'true' },
+                      h('span', { className: 'dsh-op-switchThumb' })),
+                    h('span', { className: 'dsh-op-switchText' }, t('auto.limit'))),
                   (autoDraft.limitMinutes ?? 0) > 0
                     ? h('div', { className: 'dsh-op-inline' },
                       h('input', {
@@ -2317,7 +2367,7 @@ window.__ModuleLoader__.load({
 
       /**
        * One choice card. The real input stays in the DOM for the keyboard and
-       * screen reader; the visible ring is drawn from `:has(input:checked)`.
+       * screen reader; the visible marker is drawn from `:has(input:checked)`.
        */
       const radio = (value, title, note) => h('label', { className: 'dsh-op-radio' },
         h('input', {
@@ -2327,7 +2377,8 @@ window.__ModuleLoader__.load({
           checked: form.modelSource === value,
           onChange: () => chooseSource(value),
         }),
-        h('span', { className: 'dsh-op-radioMark', 'aria-hidden': 'true' }),
+        h('span', { className: 'dsh-op-radioMark', 'aria-hidden': 'true' },
+          h('span', { className: 'dsh-op-radioDot' })),
         h('span', { className: 'dsh-op-radioText' },
           h('span', { className: 'dsh-op-radioTitle' }, title),
           note === undefined ? null : h('span', { className: 'dsh-op-radioNote' }, note)))
