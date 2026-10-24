@@ -2115,6 +2115,14 @@ async function autopilotRoute(ctx, settings, req, res) {
   if (body?.enabled !== true) {
     pilot.enabled = false
     pilot.state = 'stopped'
+    // A plain stop keeps the outcome on the pilot so the button can still say why
+    // it ended; `clear` is the explicit "forget this run" that returns it to idle.
+    if (body?.clear === true) {
+      forgetPilot(sessionId)
+      pilots.delete(sessionId)
+      sendJson(res, 200, { ok: true, pilot: null })
+      return
+    }
     forgetPilot(sessionId)
     sendJson(res, 200, { ok: true, pilot })
     return
@@ -2144,6 +2152,10 @@ async function autopilotRoute(ctx, settings, req, res) {
     }
   }
   pilot.error = null
+  // A new run drops the previous outcome, or the button would keep reporting the
+  // old one while the loop is running again.
+  pilot.stopReason = null
+  pilot.emptyStreak = 0
   pilot.lastPrompt = ''
   pilot.enabled = true
   pilot.state = 'running'

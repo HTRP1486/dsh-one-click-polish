@@ -273,6 +273,8 @@ window.__ModuleLoader__.load({
         'auto.phase.error': '出错',
         'auto.phase.stopped': '已中断',
         'auto.phase.hint': '点一下看详情',
+        'auto.restart': '重新开始',
+        'auto.clear': '清除状态',
         'auto.trace.show': '查看思考与调用',
         'auto.trace.hide': '收起思考与调用',
         'auto.trace.empty': '这个对话还没有自动运行记录。点「自动」并启动后，这里会实时显示它的思考和工具调用。',
@@ -414,6 +416,8 @@ window.__ModuleLoader__.load({
         'auto.phase.error': 'Failed',
         'auto.phase.stopped': 'Stopped',
         'auto.phase.hint': 'Click for details',
+        'auto.restart': 'Run again',
+        'auto.clear': 'Clear status',
         'auto.trace.show': 'Show reasoning and calls',
         'auto.trace.hide': 'Hide reasoning and calls',
         'auto.trace.empty': 'No autopilot run in this conversation yet. Start one from Auto, and its reasoning and tool calls appear here live.',
@@ -1327,10 +1331,14 @@ window.__ModuleLoader__.load({
           }, h(autoPhase === 'running' ? SpinnerIcon : LoopIcon), h('span', null, autoLabel)),
           autoOpen
             ? h('div', { className: 'dsh-op-pop' },
-              pilot !== null && pilot.enabled === true
+              autoPhase !== 'idle'
                 ? h(React.Fragment, null,
                   h('div', { className: 'dsh-op-popTitle' },
-                    `${t('auto.running')} ${pilot.round ?? 0}/${pilot.mode === 'goal' ? '∞' : (pilot.rounds ?? 5)}${pilot.limitMs > 0 ? ` · ${t('auto.elapsed')} ${Math.max(0, Math.round((Date.now() - (pilot.startedAt ?? Date.now())) / 60000))}${t('auto.minutes')}` : ''}`),
+                    autoPhase === 'running'
+                      ? `${t('auto.running')} ${pilot.round ?? 0}/${pilot.mode === 'goal' ? '∞' : (pilot.rounds ?? 5)}${pilot.limitMs > 0 ? ` · ${t('auto.elapsed')} ${Math.max(0, Math.round((Date.now() - (pilot.startedAt ?? Date.now())) / 60000))}${t('auto.minutes')}` : ''}`
+                      // A finished run states its outcome here, which is the whole
+                      // point of clicking a coloured button.
+                      : `${autoLabel} · ${pilot.round ?? 0}/${pilot.mode === 'goal' ? '∞' : (pilot.rounds ?? 5)}`),
                   pilot.context !== null && pilot.context !== undefined
                     ? h('div', { className: 'dsh-op-hint' },
                       `${t('auto.context')}：${pilot.context.messages} ${t('auto.context.messages')} / ${pilot.context.chars} ${t('auto.context.chars')}`,
@@ -1411,8 +1419,32 @@ window.__ModuleLoader__.load({
                             ? `${entry.summary ?? ''}${entry.text ? ` — ${entry.text}` : ''}`.slice(0, 300)
                             : (entry.reasoning || entry.text || '').slice(0, 400))))),
                   h('div', { className: 'dsh-op-inline' },
-                    h('button', { type: 'button', className: 'dsh-op-btn', onClick: interruptPilot }, t('auto.interrupt')),
-                    h('button', { type: 'button', className: 'dsh-op-btn dsh-op-btn--danger', onClick: stopPilot }, t('auto.stop'))))
+                    autoPhase === 'running'
+                      ? h(React.Fragment, null,
+                        h('button', { type: 'button', className: 'dsh-op-btn', onClick: interruptPilot }, t('auto.interrupt')),
+                        h('button', { type: 'button', className: 'dsh-op-btn dsh-op-btn--danger', onClick: stopPilot }, t('auto.stop')))
+                      // After it ends, the useful action is to run again — with the
+                      // same settings the panel already holds.
+                      : h(React.Fragment, null,
+                        h('button', {
+                          type: 'button',
+                          className: 'dsh-op-btn dsh-op-btn--wide',
+                          onClick: () => { void startPilot() },
+                        }, t('auto.restart')),
+                        h('button', {
+                          type: 'button',
+                          className: 'dsh-op-link',
+                          onClick: () => {
+                            // Clear the finished state so the button returns to grey.
+                            void fetch(PILOT, {
+                              method: 'POST',
+                              headers: { 'content-type': 'application/json' },
+                              body: JSON.stringify({ sessionId: String(sessionId), enabled: false, clear: true }),
+                            }).catch(() => {})
+                            setPilot(null)
+                            setAutoOpen(false)
+                          },
+                        }, t('auto.clear')))))
                 : h(React.Fragment, null,
                   h('div', { className: 'dsh-op-popTitle' }, t('auto.title')),
                   resumable !== null && resumable !== undefined && (pilot === null || pilot.enabled !== true)
