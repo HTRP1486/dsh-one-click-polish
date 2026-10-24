@@ -83,6 +83,18 @@ dsh plugin --profile <你的 profile 名> install github:HTRP1486/dsh-one-click-
 
 **它读到的对话你能看见**：面板里的「查看驱动 AI 读到的上下文」会显示这一轮实际传给驱动 AI 的对话全文。
 
+**它的思考和调用也能看见**：面板里的「查看思考与调用」会列出每一轮的推理、它调用了哪个工具、参数是什么、返回了什么，以及最终发给助手的那条消息。按类型上色：
+
+```
+思考 1      The draft is vague. I should look at the project directory…
+list_dir    - index.js  - client.js  d locale
+search_files  d dsh-one-click-polish  - cordis.patch.yml
+思考 2       Likely a DSH plugin. Let me check the config directory…
+已发送 1     请把这句话改得更正式：…
+```
+
+这份记录来自同一个任务表（`GET …/progress?id=autopilot-<sessionId>`），所以润色/扩写时那个进度窗也能看到同样的过程。
+
 ## 换窗口 / 重启 会怎样
 
 | 场景 | 结果 |

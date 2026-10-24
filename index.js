@@ -499,6 +499,24 @@ async function statusRoute(ctx, req, res) {
  */
 const RESEARCH = { light: 'none', standard: 'local', strong: 'web' }
 
+/**
+ * Names that must never be opened or quoted, whatever the working directory is.
+ *
+ * The workspace root is whatever the user happened to open a session on — here it
+ * was `D:\Documents`, which contains cookies, chat databases and unrelated
+ * repositories. A copy editor has no business reading any of that, so the guard
+ * is by name rather than by trusting the directory.
+ */
+// Matched against the whole name: `auth` and `session` are common enough that a
+// substring rule would hide ordinary documents like `author.md`.
+const SENSITIVE_FILE = /(^(cookies?|credential|login|logins|secrets?|token|tokens|password|passwd|session|auth|keychain|wallet|seed)([._-].*)?$)|(\.env$|\.netrc$|\.git-credentials$)|(^id_(rsa|dsa|ed25519))|(cookies?\.(txt|json)$)|(credentials?\.(json|ya?ml)$)/i
+const SENSITIVE_DIR = /^(node_modules|\.git|\.ssh|\.aws|\.gnupg|wechat files|wechat|tencent files|appdata|\.config|\.cache|\.vscode|\.idea|logins?|wxid.*)$/i
+
+/** True when a path names something the explorer must not touch. */
+function isSensitive(name) {
+  return SENSITIVE_FILE.test(name) || SENSITIVE_DIR.test(name)
+}
+
 /** Roots the explorer may read: the project, and this DSH profile. */
 function allowedRoots(ctx, agent) {
   const roots = []
@@ -561,6 +579,10 @@ function sameOrInside(child, parent) {
 /** Resolve a model-supplied path, refusing anything outside the allowed roots. */
 async function resolveAllowed(fs, roots, path, signal) {
   if (fs === undefined || typeof path !== 'string' || path.trim() === '') return null
+  // Refuse on the requested spelling before touching the disk, then again on the
+  // resolved location: a symlink or a `..` segment must not walk into a private
+  // corner of the workspace either.
+  if (path.split(/[\\/]/).some(segment => segment !== '' && segment !== '.' && isSensitive(segment))) return null
   let target
   try {
     target = await fs.resolve(path, { cwd: roots[0], signal })
@@ -568,6 +590,7 @@ async function resolveAllowed(fs, roots, path, signal) {
     return null
   }
   const display = target.displayPath ?? path
+  if (display.split(/[\\/]/).some(segment => segment !== '' && isSensitive(segment))) return null
   return roots.some(root => sameOrInside(display, root)) ? target : null
 }
 
@@ -597,6 +620,7 @@ async function searchContent(fs, roots, query, signal) {
     }
     for (const entry of entries) {
       if (hits.length >= 20 || files >= 400) break
+      if (isSensitive(entry.name)) continue
       if (entry.type === 'directory') {
         if (!SKIP_DIR.test(entry.name)) stack.push(entry.target.displayPath ?? entry.name)
         continue
@@ -896,7 +920,12 @@ async function runTool(ctx, agent, roots, call, signal) {
     if (target === null) return { text: '路径不在允许范围内（只允许项目目录与 DSH 配置目录）', summary: '越界' }
     try {
       const entries = await fs.listDir(target, signal)
-      const lines = entries.slice(0, 80).map(entry => `${entry.type === 'directory' ? 'd' : '-'} ${entry.name}`)
+      // Names the explorer has no business reporting are hidden rather than
+      // listed: the model cannot ask about what it never saw.
+      const visible = entries.filter(entry => !isSensitive(entry.name))
+      const hidden = entries.length - visible.length
+      const lines = visible.slice(0, 80).map(entry => `${entry.type === 'directory' ? 'd' : '-'} ${entry.name}`)
+      if (hidden > 0) lines.push(`(${hidden} 个条目不显示)`)
       return { text: lines.join('\n') || '(空目录)', summary: `列目录：${String(args.path).slice(0, 24)}` }
     } catch (error) {
       return { text: `列目录失败：${textOf(error)}`, summary: '列目录失败' }
@@ -996,6 +1025,7 @@ async function explore(ctx, selection, input, research, job, agent, signal, syst
     if (Date.now() > deadline) break
     const blocks = []
     let text = ''
+    let reasoning = ''
     let finish
     const stream = ctx.llm.stream({
       provider: selection.provider,
@@ -1007,6 +1037,7 @@ async function explore(ctx, selection, input, research, job, agent, signal, syst
     })
     for await (const chunk of stream) {
       if (chunk?.type === 'text-delta' && typeof chunk.text === 'string') text += chunk.text
+      else if (chunk?.type === 'reasoning-delta' && typeof chunk.text === 'string') reasoning += chunk.text
       else if (chunk?.type === 'block-end' && chunk.block !== undefined) blocks.push(chunk.block)
       else if (chunk?.type === 'finish') finish = chunk.reason
     }
@@ -1014,6 +1045,15 @@ async function explore(ctx, selection, input, research, job, agent, signal, syst
     if (finish?.kind === 'aborted') throw new Error('检索已取消')
 
     const calls = blocks.filter(block => block.type === 'tool-call')
+    // Record what this round looked like, so the panel can show the reasoning
+    // and every call instead of only the final message.
+    trace(job, {
+      kind: calls.length === 0 ? 'conclusion' : 'round',
+      round,
+      reasoning: reasoning.trim().slice(0, 1200),
+      text: text.trim().slice(0, 2000),
+      calls: calls.map(call => ({ name: call.name, arguments: String(call.arguments ?? '').slice(0, 300) })),
+    })
     if (calls.length === 0) {
       if (text.trim() !== '') findings.push(text.trim())
       break
@@ -1028,6 +1068,13 @@ async function explore(ctx, selection, input, research, job, agent, signal, syst
     for (const call of calls) {
       const result = await runTool(ctx, agent, roots, call, signal)
       markStep(job, 'explore', 'running', result.summary)
+      trace(job, {
+        kind: 'tool',
+        round,
+        name: call.name,
+        summary: result.summary,
+        text: String(result.text ?? '').slice(0, 600),
+      })
       total += result.text.length
       messages.push({
         id: `explore-${round}-${call.id}`,
@@ -1136,11 +1183,23 @@ function createJob(id, mode, research) {
     result: null,
     model: '',
     contextChars: 0,
+    // What the model reasoned and every tool it called, in order. Bounded so a
+    // long run cannot grow without limit.
+    trace: [],
     at: Date.now(),
   }
   jobs.set(id, job)
   while (jobs.size > JOB_LIMIT) jobs.delete(jobs.keys().next().value)
   return job
+}
+
+const TRACE_LIMIT = 120
+
+/** Append one step of the model's work to the job's visible trace. */
+function trace(job, entry) {
+  if (job === null) return
+  job.trace.push({ ...entry, at: Date.now() })
+  if (job.trace.length > TRACE_LIMIT) job.trace.shift()
 }
 
 function markStep(job, key, state, detail) {
@@ -1167,6 +1226,9 @@ async function progressRoute(req, res) {
       done: job.done,
       error: job.error,
       steps: job.steps.map(step => ({ ...step })),
+      // What the model reasoned and called, so the panel can show the process
+      // rather than only the outcome.
+      trace: job.trace.slice(-60),
       // The finished payload travels with the poll, so the browser never has to
       // hold one long request open.
       result: job.done === true && job.error === null ? job.result : null,
@@ -1693,6 +1755,9 @@ async function drivePilot(ctx, sessionId, agentRef, pilot) {
       pilot.round += 1
       pilot.lastPrompt = next.text
       pilot.state = 'sent'
+      // Keep the driver's own decision visible: which round, and the message it
+      // chose to send.
+      trace(job, { kind: 'sent', round: pilot.round, text: next.text.slice(0, 1500) })
       // Checkpoint after every round: a crash here must not lose the count.
       rememberPilot(pilot)
       agent.followup({

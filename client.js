@@ -240,6 +240,12 @@ window.__ModuleLoader__.load({
         'auto.context.messages': '条消息',
         'auto.context.chars': '字',
         'auto.context.show': '查看驱动 AI 读到的上下文',
+        'auto.trace.show': '查看思考与调用',
+        'auto.trace.hide': '收起思考与调用',
+        'auto.trace.empty': '还没有记录（第一轮结束后出现）',
+        'auto.trace.think': '思考',
+        'auto.trace.sent': '已发送',
+        'auto.trace.conclusion': '结论',
         'auto.resume.found': '上次中断的自动运行',
         'auto.resume.action': '从中断处继续',
         'auto.resume.discard': '丢弃',
@@ -348,6 +354,12 @@ window.__ModuleLoader__.load({
         'auto.context.messages': 'messages',
         'auto.context.chars': 'chars',
         'auto.context.show': 'Show what the driver read',
+        'auto.trace.show': 'Show reasoning and calls',
+        'auto.trace.hide': 'Hide reasoning and calls',
+        'auto.trace.empty': 'Nothing recorded yet (appears after the first round)',
+        'auto.trace.think': 'Thinking',
+        'auto.trace.sent': 'Sent',
+        'auto.trace.conclusion': 'Conclusion',
         'auto.resume.found': 'Interrupted run from last time',
         'auto.resume.action': 'Resume where it stopped',
         'auto.resume.discard': 'Discard',
@@ -602,6 +614,16 @@ window.__ModuleLoader__.load({
 .dsh-op-pre{margin:0;max-height:180px;overflow:auto;padding:8px;border-radius:8px;
   background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l1);
   color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px;white-space:pre-wrap;word-break:break-word}
+.dsh-op-trace{display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto;
+  padding:6px;border-radius:8px;background:var(--dsw-alias-bg-base);
+  border:1px solid var(--dsw-alias-border-l1)}
+.dsh-op-traceRow{display:flex;flex-direction:column;gap:1px;font-size:11px;line-height:15px;
+  color:var(--dsw-alias-label-secondary)}
+.dsh-op-traceTag{font-weight:600;color:var(--dsw-alias-label-primary)}
+.dsh-op-traceRow[data-kind="tool"] .dsh-op-traceTag{color:var(--dsw-alias-brand-primary)}
+.dsh-op-traceRow[data-kind="sent"] .dsh-op-traceTag{color:var(--dsw-alias-state-success-primary)}
+.dsh-op-traceRow[data-kind="conclusion"] .dsh-op-traceTag{color:var(--dsw-alias-state-warn-primary)}
+.dsh-op-traceText{white-space:pre-wrap;word-break:break-word;opacity:.9}
 .dsh-op-resume{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px;
   border-radius:8px;background:var(--dsw-alias-interactive-bg-hover);
   border:1px solid var(--dsw-alias-border-l1)}
@@ -703,6 +725,7 @@ window.__ModuleLoader__.load({
       const [autoOpen, setAutoOpen] = useState(false)
       const [autoDraft, setAutoDraft] = useState({ mode: 'rounds', rounds: 5, goal: '', limitMinutes: 0 })
       const [autoDetail, setAutoDetail] = useState(null)
+      const [autoTrace, setAutoTrace] = useState(null)
       const [resumable, setResumable] = useState(null)
       const [starting, setStarting] = useState(false)
       const pilotTimer = useRef(null)
@@ -1125,6 +1148,44 @@ window.__ModuleLoader__.load({
                   autoDetail === null
                     ? null
                     : h('pre', { className: 'dsh-op-pre' }, autoDetail),
+                  h('button', {
+                    type: 'button',
+                    className: 'dsh-op-link',
+                    onClick: async () => {
+                      if (autoTrace !== null) { setAutoTrace(null); return }
+                      try {
+                        // The driver's work is recorded on the job named after
+                        // the session, which is what `trace` reads.
+                        const response = await fetch(`${PROGRESS}?id=${encodeURIComponent(`autopilot-${String(sessionId)}`)}`)
+                        const payload = await response.json()
+                        setAutoTrace(payload?.job?.trace ?? [])
+                      } catch {
+                        setAutoTrace([])
+                      }
+                    },
+                  }, autoTrace === null ? t('auto.trace.show') : t('auto.trace.hide')),
+                  autoTrace === null
+                    ? null
+                    : h('div', { className: 'dsh-op-trace' },
+                      autoTrace.length === 0
+                        ? h('div', { className: 'dsh-op-hint' }, t('auto.trace.empty'))
+                        : autoTrace.map((entry, index) => h('div', {
+                          key: index,
+                          className: 'dsh-op-traceRow',
+                          'data-kind': entry.kind,
+                        },
+                        h('span', { className: 'dsh-op-traceTag' },
+                          entry.kind === 'round'
+                            ? `${t('auto.trace.think')} ${entry.round}`
+                            : entry.kind === 'tool'
+                              ? entry.name
+                              : entry.kind === 'sent'
+                                ? `${t('auto.trace.sent')} ${entry.round}`
+                                : t('auto.trace.conclusion')),
+                        h('span', { className: 'dsh-op-traceText' },
+                          entry.kind === 'tool'
+                            ? `${entry.summary ?? ''}${entry.text ? ` — ${entry.text}` : ''}`.slice(0, 300)
+                            : (entry.reasoning || entry.text || '').slice(0, 400))))),
                   h('div', { className: 'dsh-op-inline' },
                     h('button', { type: 'button', className: 'dsh-op-btn', onClick: interruptPilot }, t('auto.interrupt')),
                     h('button', { type: 'button', className: 'dsh-op-btn dsh-op-btn--danger', onClick: stopPilot }, t('auto.stop'))))
