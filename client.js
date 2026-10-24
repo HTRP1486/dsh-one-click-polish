@@ -712,7 +712,12 @@ window.__ModuleLoader__.load({
 .dsh-op-thinkRow[data-kind="tool"] .dsh-op-thinkBody{opacity:.72}
 .dsh-op-thinkRow[data-kind="sent"] .dsh-op-thinkTag{color:var(--dsw-alias-state-success-primary)}
 .dsh-op-thinkRow[data-kind="conclusion"] .dsh-op-thinkTag{color:var(--dsw-alias-state-warn-primary)}
-.dsh-op-thinkTime{margin-left:auto;font-size:10px;color:var(--dsw-alias-label-secondary);opacity:.8}
+/* A folded row's first line, so the list stays scannable without expanding. */
+.dsh-op-thinkPeek{flex:1;min-width:0;margin-left:6px;font-size:11px;line-height:16px;
+  color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));opacity:.85;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsh-op-thinkTime{margin-left:auto;font-size:10px;color:var(--dsw-alias-label-secondary);opacity:.8;
+  flex:none}
 .dsh-op-thinkBody{white-space:pre-wrap;word-break:break-word;font-size:11.5px;line-height:16px;
   color:var(--dsw-alias-label-secondary)}
 .dsh-op-runs{display:flex;flex-direction:column;gap:4px;margin-top:6px}
@@ -1687,11 +1692,10 @@ window.__ModuleLoader__.load({
         const live = entry.live === true
         const long = String(body).length > 60
         const foldable = !live && long && (kind === 'tool' || kind === 'round')
-        // Reasoning opens by default (it is the interesting part); tool calls start
-        // folded. `openRows` remembers the opposite of that default.
-        const defaultOpen = kind === 'round'
+        // Both kinds start folded, so a long run reads as one line per step and
+        // opens only where the user wants detail. `openRows` holds what was opened.
         const toggled = openRows.has(index)
-        const open = defaultOpen ? !toggled : toggled
+        const open = toggled
         return h('div', {
           key: index,
           className: 'dsh-op-thinkRow',
@@ -1715,6 +1719,11 @@ window.__ModuleLoader__.load({
               ? h('span', { className: 'dsh-op-thinkCaret', 'aria-hidden': 'true' }, open ? '▾' : '▸')
               : null,
           h('span', { className: 'dsh-op-thinkTag' }, tag),
+          // A folded row still shows its first line, so a collapsed run is readable
+          // at a glance instead of a column of bare labels.
+          foldable && !open
+            ? h('span', { className: 'dsh-op-thinkPeek' }, String(body).replace(/\s+/g, ' ').slice(0, 80))
+            : null,
           entry.at === undefined ? null : h('span', { className: 'dsh-op-thinkTime' }, String(entry.at).slice(11, 19))),
         h('div', { className: 'dsh-op-thinkBody' },
           foldable && !open ? '' : String(body).slice(0, 1500)))
@@ -2248,11 +2257,10 @@ window.__ModuleLoader__.load({
                       ? `${entry.summary ?? ''}${entry.text ? ` — ${entry.text}` : ''}`
                       : (entry.reasoning || entry.text || '')
                     // Same rule as the window: long tool rows and long reasoning
-                    // both fold, reasoning opening by default.
+                    // both start folded, so the log reads as one line per step.
                     const long = String(text).length > 60
                     const foldable = long && (kind === 'tool' || kind === 'round')
-                    const toggled = runOpen.has(index)
-                    const open = kind === 'round' ? !toggled : toggled
+                    const open = runOpen.has(index)
                     return h('div', {
                       key: index,
                       className: 'dsh-op-thinkRow',
@@ -2272,6 +2280,9 @@ window.__ModuleLoader__.load({
                         ? h('span', { className: 'dsh-op-thinkCaret', 'aria-hidden': 'true' }, open ? '▾' : '▸')
                         : null,
                       h('span', { className: 'dsh-op-thinkTag' }, tag),
+                      foldable && !open
+                        ? h('span', { className: 'dsh-op-thinkPeek' }, String(text).replace(/\s+/g, ' ').slice(0, 80))
+                        : null,
                       h('span', { className: 'dsh-op-thinkTime' }, String(entry.at ?? '').slice(5, 19))),
                     h('div', { className: 'dsh-op-thinkBody' },
                       foldable && !open ? '' : String(text).slice(0, 1000)))
