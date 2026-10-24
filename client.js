@@ -659,6 +659,7 @@ window.__ModuleLoader__.load({
   color:var(--dsw-alias-label-primary);font-size:12px;line-height:18px}
 .dsh-op-popTitle{font-size:13px;font-weight:500;line-height:20px}
 .dsh-op-btn--danger{color:var(--dsw-alias-state-error-primary)}
+.dsh-op-btn--wide{width:100%;justify-content:center;margin-top:2px}
 .dsh-op-pre{margin:0;max-height:180px;overflow:auto;padding:8px;border-radius:8px;
   background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l1);
   color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px;white-space:pre-wrap;word-break:break-word}
@@ -1417,6 +1418,18 @@ window.__ModuleLoader__.load({
                     value: autoDraft.goal,
                     onChange: event => setAutoDraft({ ...autoDraft, goal: event.target.value }),
                   }),
+                  h('button', {
+                    type: 'button',
+                    className: 'dsh-op-btn dsh-op-btn--wide',
+                    onClick: () => {
+                      if (thinkState.open === true) {
+                        publishThink({ open: false, sessionId: null })
+                        return
+                      }
+                      publishThink({ open: true, sessionId: String(sessionId) })
+                      setAutoOpen(false)
+                    },
+                  }, think.open === true ? t('auto.trace.undock') : t('auto.trace.dock')),
                   h('button', {
                     type: 'button',
                     className: 'dsh-op-save',
