@@ -1127,6 +1127,35 @@ async function explore(ctx, selection, input, research, job, agent, signal, syst
     if (total > MAX_FINDINGS_CHARS || Date.now() > deadline) break
   }
 
+  // A round that ran out of budget mid-tool-call exits the loop without ever
+  // reaching the point where a conclusion is written, so `findings` came back
+  // empty and the driver above read that as "no next message" and stopped the
+  // whole autopilot. Ask once more with tools withheld, which forces prose.
+  if (findings.length === 0 || findings.join('').trim() === '') {
+    try {
+      let finalText = ''
+      const closing = ctx.llm.stream({
+        provider: selection.provider,
+        model: selection.model,
+        messages: [
+          ...messages,
+          {
+            id: 'explore-final',
+            role: 'user',
+            content: [{ type: 'text', text: '不要再调用任何工具。现在把你的结论直接写出来。' }],
+          },
+        ],
+        system,
+        // No tools: the model has to answer in text instead of searching more.
+        signal,
+      })
+      for await (const chunk of closing) {
+        if (chunk?.type === 'text-delta' && typeof chunk.text === 'string') finalText += chunk.text
+      }
+      if (finalText.trim() !== '') findings.push(finalText.trim())
+    } catch { /* the caller still gets whatever the rounds produced */ }
+  }
+
   // Only what the model wrote in its closing turn is carried forward. Dumping raw
   // tool output into the rewrite prompt is what made the rewriter believe it had
   // been handed a tool log from another conversation instead of a draft.
@@ -2064,10 +2093,15 @@ async function drivePilot(ctx, sessionId, agentRef, pilot) {
     // No recorded reason means the user paused the loop, which is exactly the case
     // that must stay resumable; every other exit already named its reason.
     if (pilot.stopReason === null || pilot.stopReason === undefined) pilot.stopReason = 'stopped'
-    // Keep the checkpoint when the run was interrupted rather than completed: a
-    // stop is a pause the user can resume. Reaching the goal, the round cap, or an
-    // error is an ending, and there is nothing left to resume from.
-    const resumable = pilot.stopReason === 'stopped' || pilot.stopReason === 'busy'
+    // Keep the checkpoint when the run was paused rather than completed: a stop by
+    // the user, a park on a busy assistant, or a driver that produced nothing are
+    // all states worth resuming. Reaching the goal or the round cap is an ending.
+    const resumable = pilot.stopReason === 'stopped'
+      || pilot.stopReason === 'interrupted'
+      || pilot.stopReason === 'busy'
+      // An empty answer stopped the loop mid-work, not at the end of it: the rounds
+      // it already spent still count if the user retries.
+      || pilot.stopReason === 'empty'
     if (resumable) rememberPilot(pilot)
     else forgetPilot(sessionId)
     // Diagnosable after the fact: the checkpoint file is the only state a resume
@@ -2132,8 +2166,12 @@ async function autopilotRoute(ctx, settings, req, res) {
   }
 
   if (body?.enabled !== true) {
+    // The user asked it to stop, which is a different fact from the driver running
+    // out of things to say: record which one happened.
+    const wasRunning = pilot.enabled === true
     pilot.enabled = false
     pilot.state = 'stopped'
+    if (wasRunning) pilot.stopReason = 'interrupted'
     pilot.stopReason = pilot.stopReason ?? 'stopped'
     // `clear` is the explicit "forget this run": it drops the checkpoint and the
     // pilot, so the button returns to a plain grey idle.

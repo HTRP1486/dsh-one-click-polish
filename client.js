@@ -265,13 +265,15 @@ window.__ModuleLoader__.load({
         'auto.stop.rounds': '已跑满设定的轮数，自动结束。',
         'auto.stop.time': '到了设定的时长上限，自动结束。',
         'auto.stop.goal': '驱动 AI 判断目标已达成，提前收工。',
-        'auto.stop.empty': '驱动 AI 连续返回空消息，已停止。',
+        'auto.stop.empty': '驱动 AI 想不出下一步了（连续返回空消息），已自行停下。点「继续」可以再试。',
         'auto.stop.error': '运行中出错，已停止。',
         'auto.stop.session-gone': '会话已关闭，自动结束。',
         'auto.stop.busy': '助手还在处理上一条消息，先停下了。',
         'auto.phase.done': '已完成',
         'auto.phase.error': '出错',
-        'auto.phase.stopped': '已中断',
+        'auto.phase.stopped': '意外停止',
+        'auto.phase.interrupted': '已中断',
+        'auto.stop.interrupted': '你手动停下了，可以继续。',
         'auto.phase.hint': '点一下看详情',
         'auto.restart': '重新开始',
         'auto.clear': '清除状态',
@@ -408,13 +410,15 @@ window.__ModuleLoader__.load({
         'auto.stop.rounds': 'Stopped: the configured round count was reached.',
         'auto.stop.time': 'Stopped: the time limit was reached.',
         'auto.stop.goal': 'Stopped early: the driver judged the goal met.',
-        'auto.stop.empty': 'Stopped: the driver returned empty replies twice in a row.',
+        'auto.stop.empty': 'The driver could not think of a next step (two empty replies in a row). Continue to retry.',
         'auto.stop.error': 'Stopped after an error.',
         'auto.stop.session-gone': 'Stopped: the session is gone.',
         'auto.stop.busy': 'Stopped: the assistant was still busy with the previous message.',
         'auto.phase.done': 'Done',
         'auto.phase.error': 'Failed',
         'auto.phase.stopped': 'Stopped',
+        'auto.phase.interrupted': 'Interrupted',
+        'auto.stop.interrupted': 'You stopped it. You can continue.',
         'auto.phase.hint': 'Click for details',
         'auto.restart': 'Run again',
         'auto.clear': 'Clear status',
@@ -1309,7 +1313,11 @@ window.__ModuleLoader__.load({
         }
         if (autoPhase === 'done') return t('auto.phase.done')
         if (autoPhase === 'error') return t('auto.phase.error')
-        if (autoPhase === 'stopped') return t('auto.phase.stopped')
+        // A user stop and a driver that fell over are both "not running any more",
+        // but only one of them is the user's own doing.
+        if (autoPhase === 'stopped') {
+          return pilot?.stopReason === 'interrupted' ? t('auto.phase.interrupted') : t('auto.phase.stopped')
+        }
         return t('auto.off')
       })()
 
