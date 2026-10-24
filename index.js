@@ -1069,6 +1069,23 @@ async function explore(ctx, selection, input, research, job, agent, signal, syst
       calls: calls.map(call => ({ name: call.name, arguments: String(call.arguments ?? '').slice(0, 300) })),
     })
     if (calls.length === 0) {
+      // The model stopped calling tools. If it also wrote nothing, its turn ended
+      // without a conclusion — treating that as an answer would hand the caller an
+      // empty string and, for the driver, silently end the run. Nudge it once.
+      if (text.trim() === '' && reasoning.trim() !== '' && round < MAX_EXPLORE_ROUNDS) {
+        messages.push({
+          id: `explore-${round}`,
+          role: 'assistant',
+          content: blocks.length > 0 ? blocks : [{ type: 'text', text: reasoning.trim().slice(0, 500) }],
+          source: { kind: 'model', provider: selection.provider, model: selection.model },
+        })
+        messages.push({
+          id: `explore-${round}-nudge`,
+          role: 'user',
+          content: [{ type: 'text', text: '你的上一条回复只有思考、没有正文。请直接写出结论正文。' }],
+        })
+        continue
+      }
       if (text.trim() !== '') findings.push(text.trim())
       break
     }
@@ -1711,6 +1728,15 @@ const DRIVER_SYSTEM = [
 
 const MAX_AUTOPILOT_ROUNDS = 50
 
+/**
+ * How long one round may wait for the assistant to finish the previous message.
+ *
+ * A long turn (a big refactor, a web search) is normal, but waiting forever makes
+ * the autopilot indistinguishable from a hung one: this ceiling turns that into a
+ * stated stop with a reason the panel can show.
+ */
+const MAX_IDLE_WAIT_MS = 5 * 60 * 1000
+
 /** One driver per Session; the state is what the toolbar polls. */
 const pilots = new Map()
 
@@ -1950,7 +1976,26 @@ async function drivePilot(ctx, sessionId, agentRef, pilot) {
           break
         }
       }
-      await agent.whenIdle()
+      // The assistant may still be answering the previous message. Say so, and put a
+      // ceiling on the wait: an assistant stuck in a very long turn would otherwise
+      // look like a dead autopilot, because the loop can do nothing until it idles.
+      pilot.state = 'waiting'
+      const idleDeadline = Date.now() + MAX_IDLE_WAIT_MS
+      let idle = false
+      while (pilot.enabled && Date.now() < idleDeadline) {
+        idle = await Promise.race([
+          agent.whenIdle().then(() => true),
+          new Promise(resolve => setTimeout(() => resolve(false), 5000)),
+        ])
+        if (idle) break
+      }
+      if (!pilot.enabled) break
+      if (!idle) {
+        pilot.state = 'waiting'
+        pilot.stopReason = 'busy'
+        pilot.error = '助手一直在处理上一条消息，自动驾驶先停下；等它空下来再点「自动」继续'
+        break
+      }
       if (!pilot.enabled) break
       if (outOfTime()) {
         pilot.state = 'timeout'
@@ -1972,11 +2017,22 @@ async function drivePilot(ctx, sessionId, agentRef, pilot) {
         pilot.stopReason = 'goal'
         break
       }
+      // An empty answer is usually a hiccup, not a decision: the model thought
+      // about it and produced no body (a truncated turn, a stray stop token). It
+      // used to end the run right there, which is why the autopilot seemed to
+      // switch itself off after thinking for a while. Ask again before giving up.
       if (next.text === '') {
+        pilot.emptyStreak = (pilot.emptyStreak ?? 0) + 1
+        if (pilot.emptyStreak <= 2) {
+          pilot.state = 'thinking'
+          continue
+        }
         pilot.state = 'empty'
         pilot.stopReason = 'empty'
+        pilot.error = '驱动 AI 连续返回空消息'
         break
       }
+      pilot.emptyStreak = 0
       pilot.round += 1
       pilot.lastPrompt = next.text
       pilot.state = 'sent'
@@ -1985,6 +2041,8 @@ async function drivePilot(ctx, sessionId, agentRef, pilot) {
       trace(job, { kind: 'sent', round: pilot.round, text: next.text.slice(0, 1500) })
       // Checkpoint after every round: a crash here must not lose the count.
       rememberPilot(pilot)
+      // Send it; the top of the loop waits for the assistant to finish before the
+      // next decision, so the driver always plans from an up-to-date transcript.
       agent.followup({
         id: `autopilot-${Date.now().toString(36)}-${pilot.round}`,
         role: 'user',

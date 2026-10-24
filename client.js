@@ -262,6 +262,13 @@ window.__ModuleLoader__.load({
         'auto.context.show': '查看驱动 AI 读到的上下文',
         'auto.context.dropped': '压缩省略',
         'auto.context.droppedUnit': '条',
+        'auto.stop.rounds': '已跑满设定的轮数，自动结束。',
+        'auto.stop.time': '到了设定的时长上限，自动结束。',
+        'auto.stop.goal': '驱动 AI 判断目标已达成，提前收工。',
+        'auto.stop.empty': '驱动 AI 连续返回空消息，已停止。',
+        'auto.stop.error': '运行中出错，已停止。',
+        'auto.stop.session-gone': '会话已关闭，自动结束。',
+        'auto.stop.busy': '助手还在处理上一条消息，先停下了。',
         'auto.trace.show': '查看思考与调用',
         'auto.trace.hide': '收起思考与调用',
         'auto.trace.empty': '这个对话还没有自动运行记录。点「自动」并启动后，这里会实时显示它的思考和工具调用。',
@@ -392,6 +399,13 @@ window.__ModuleLoader__.load({
         'auto.context.show': 'Show what the driver read',
         'auto.context.dropped': 'compressed',
         'auto.context.droppedUnit': 'messages',
+        'auto.stop.rounds': 'Stopped: the configured round count was reached.',
+        'auto.stop.time': 'Stopped: the time limit was reached.',
+        'auto.stop.goal': 'Stopped early: the driver judged the goal met.',
+        'auto.stop.empty': 'Stopped: the driver returned empty replies twice in a row.',
+        'auto.stop.error': 'Stopped after an error.',
+        'auto.stop.session-gone': 'Stopped: the session is gone.',
+        'auto.stop.busy': 'Stopped: the assistant was still busy with the previous message.',
         'auto.trace.show': 'Show reasoning and calls',
         'auto.trace.hide': 'Hide reasoning and calls',
         'auto.trace.empty': 'No autopilot run in this conversation yet. Start one from Auto, and its reasoning and tool calls appear here live.',
@@ -1383,6 +1397,12 @@ window.__ModuleLoader__.load({
                     : null,
                   pilot !== null && typeof pilot.error === 'string' && pilot.error !== ''
                     ? h('p', { className: 'dsh-op-hint dsh-op-hint--error' }, pilot.error)
+                    : null,
+                  // Why the last run ended. Without this a run that stops on its own
+                  // looks like it switched itself off for no reason.
+                  pilot !== null && pilot.enabled !== true
+                    && typeof pilot.stopReason === 'string' && pilot.stopReason !== ''
+                    ? h('p', { className: 'dsh-op-hint' }, t(`auto.stop.${pilot.stopReason}`))
                     : null,
                   h('label', { className: 'dsh-op-radio' },
                     h('input', {
