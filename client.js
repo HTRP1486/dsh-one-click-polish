@@ -83,6 +83,33 @@ window.__ModuleLoader__.load({
      */
     let jobState = null
     const jobListeners = new Set()
+    /**
+     * The autopilot confirmation is a frame-wide overlay, not a child of the
+     * composer. Rendered inside the conversation scroll container, a
+     * position: fixed backdrop is trapped by an ancestor's transform and ends up
+     * covering the whole app instead of just the screen — which also swallowed
+     * clicks meant for the harness's own question card. Its state therefore
+     * lives here, and it renders in shell.overlay.
+     */
+    let confirmState = null
+    const confirmListeners = new Set()
+
+    function publishConfirm(next) {
+      confirmState = next
+      for (const listener of confirmListeners) listener()
+    }
+
+    function useConfirm() {
+      const [value, setValue] = useState(confirmState)
+      useEffect(() => {
+        const listener = () => setValue(confirmState)
+        confirmListeners.add(listener)
+        listener()
+        return () => { confirmListeners.delete(listener) }
+      }, [])
+      return value
+    }
+
 
     function publishJob(next) {
       jobState = next
@@ -674,7 +701,6 @@ window.__ModuleLoader__.load({
       const [strength, setStrength] = useState(readStrength)
       const [pilot, setPilot] = useState(null)
       const [autoOpen, setAutoOpen] = useState(false)
-      const [autoConfirm, setAutoConfirm] = useState(false)
       const [autoDraft, setAutoDraft] = useState({ mode: 'rounds', rounds: 5, goal: '', limitMinutes: 0 })
       const [autoDetail, setAutoDetail] = useState(null)
       const [resumable, setResumable] = useState(null)
@@ -742,17 +768,17 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         if (!autoOpen) return undefined
         const onDown = (event) => {
-          // The confirm dialog is rendered outside the panel element; while it is
-          // up it owns the interaction, so an outside click must not dismiss both.
-          if (autoConfirm) return
+          // While the confirmation overlay is up it owns the interaction, so an
+          // outside click must not dismiss the panel underneath it as well.
+          if (confirmState !== null) return
           if (autoRef.current !== null && event.target instanceof Node && !autoRef.current.contains(event.target)) {
             setAutoOpen(false)
           }
         }
         const onKey = (event) => {
           if (event.key !== 'Escape') return
-          if (autoConfirm) {
-            setAutoConfirm(false)
+          if (confirmState !== null) {
+            publishConfirm(null)
             return
           }
           setAutoOpen(false)
@@ -763,7 +789,7 @@ window.__ModuleLoader__.load({
           document.removeEventListener('mousedown', onDown)
           document.removeEventListener('keydown', onKey)
         }
-      }, [autoOpen, autoConfirm])
+      }, [autoOpen, confirmState !== null])
 
       // Poll the driver while it is armed: the Host stops it on its own when the
       // goal is met or the round budget runs out, and the button has to follow.
@@ -788,7 +814,7 @@ window.__ModuleLoader__.load({
       /** Open the panel; a fresh start loads the saved defaults into the draft. */
       const openPilot = useCallback(async () => {
         setAutoOpen(true)
-        setAutoConfirm(false)
+        publishConfirm(null)
         if (pilot !== null && pilot.enabled === true) return
         // Pick up a previous run's outcome, so a failure is visible instead of
         // looking like nothing happened.
@@ -836,7 +862,7 @@ window.__ModuleLoader__.load({
           const payload = await response.json()
           if (payload?.ok === true) {
             setPilot(payload.pilot)
-            setAutoConfirm(false)
+            publishConfirm(null)
             setAutoOpen(false)
             // Remember what was just chosen, so the next open starts from it.
             fetch(SETTINGS, {
@@ -1063,7 +1089,7 @@ window.__ModuleLoader__.load({
               // A second click on the same button closes the panel it opened.
               if (autoOpen) {
                 setAutoOpen(false)
-                setAutoConfirm(false)
+                publishConfirm(null)
                 return
               }
               openPilot()
@@ -1231,38 +1257,19 @@ window.__ModuleLoader__.load({
                     type: 'button',
                     className: 'dsh-op-save',
                     disabled: starting,
-                    onClick: () => setAutoConfirm(true),
+                    onClick: () => {
+                      // Hand the dialog to the frame-wide overlay.
+                      publishConfirm({
+                        title: t('auto.warn.title'),
+                        body: t('auto.warn.body'),
+                        confirmLabel: t('auto.warn.confirm'),
+                        cancelLabel: t('auto.warn.cancel'),
+                        onConfirm: startPilot,
+                      })
+                      setAutoOpen(false)
+                    },
                   }, starting ? t('auto.starting') : t('auto.start'))))
-            : null),
-        autoConfirm
-          ? h('div', {
-            className: 'dsh-op-modal',
-            role: 'dialog',
-            'aria-modal': 'true',
-            // Clicking the backdrop cancels; clicking the card does not, because
-            // its own click handler stops the event here.
-            onMouseDown: event => {
-              if (event.target === event.currentTarget) setAutoConfirm(false)
-            },
-          },
-          h('div', {
-            className: 'dsh-op-modalCard',
-            onMouseDown: event => event.stopPropagation(),
-          },
-              h('div', { className: 'dsh-op-h2' }, t('auto.warn.title')),
-              h('p', { className: 'dsh-op-sub' }, t('auto.warn.body')),
-              h('div', { className: 'dsh-op-inline' },
-                h('button', {
-                  type: 'button',
-                  className: 'dsh-op-link',
-                  onClick: () => setAutoConfirm(false),
-                }, t('auto.warn.cancel')),
-                h('button', {
-                  type: 'button',
-                  className: 'dsh-op-save',
-                  onClick: startPilot,
-                }, t('auto.warn.confirm')))))
-          : null)
+            : null))
     }
 
     // ── progress panel ──────────────────────────────────────────────────────
@@ -1275,7 +1282,46 @@ window.__ModuleLoader__.load({
      */
     function ProgressPanel({ t }) {
       const job = useJob()
-      if (job === null) return null
+      const confirm = useConfirm()
+
+      // The autopilot confirmation shares this frame-wide seat. Rendering it
+      // here rather than inside the composer keeps its backdrop over the screen
+      // and off the harness's own dialogs.
+      const dialog = confirm === null
+        ? null
+        : h('div', {
+          className: 'dsh-op-modal',
+          role: 'dialog',
+          'aria-modal': 'true',
+          // The backdrop cancels; the card stops the event, so a click inside
+          // it never reaches this handler.
+          onMouseDown: event => {
+            if (event.target === event.currentTarget) publishConfirm(null)
+          },
+        },
+        h('div', {
+          className: 'dsh-op-modalCard',
+          onMouseDown: event => event.stopPropagation(),
+        },
+          h('div', { className: 'dsh-op-h2' }, confirm.title),
+          h('p', { className: 'dsh-op-sub' }, confirm.body),
+          h('div', { className: 'dsh-op-inline' },
+            h('button', {
+              type: 'button',
+              className: 'dsh-op-link',
+              onClick: () => publishConfirm(null),
+            }, confirm.cancelLabel),
+            h('button', {
+              type: 'button',
+              className: 'dsh-op-save',
+              onClick: () => {
+                // Close first: the action may itself open a new panel.
+                publishConfirm(null)
+                confirm.onConfirm()
+              },
+            }, confirm.confirmLabel))))
+
+      if (job === null) return dialog
 
       const steps = job.steps ?? []
       const total = steps.length === 0 ? 1 : steps.length
@@ -1300,7 +1346,7 @@ window.__ModuleLoader__.load({
         h('span', { className: 'dsh-op-jobMiniText' }, `${title} ${finished}/${total}`))
       }
 
-      return h('div', {
+      const panel = h('div', {
         className: 'dsh-op-job',
         'data-state': failed ? 'error' : job.done === true ? 'done' : 'running',
         role: 'status',
@@ -1346,6 +1392,8 @@ window.__ModuleLoader__.load({
             ? null
             : h('span', { className: 'dsh-op-jobDetail' }, step.detail)))),
       failed ? h('div', { className: 'dsh-op-jobError' }, job.error) : null)
+
+      return h(React.Fragment, null, dialog, panel)
     }
 
     // ── model picker ────────────────────────────────────────────────────────
