@@ -1498,7 +1498,10 @@ window.__ModuleLoader__.load({
               },
             }, confirm.confirmLabel))))
 
-      if (job === null) return dialog
+      // The thinking window has its own visibility rule, so it must render even
+      // when no job and no dialog do — an early `return dialog` here would drop it
+      // and the right-hand window could never appear.
+      if (job === null) return h(React.Fragment, null, dialog, h(ThinkWindow, { t }))
 
       const steps = job.steps ?? []
       const total = steps.length === 0 ? 1 : steps.length
