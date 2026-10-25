@@ -278,6 +278,12 @@ window.__ModuleLoader__.load({
         'settings.idleWait': '等待助手完成上一轮的上限',
         'settings.idleWait.hint': '自动驾驶要发下一条时，如果助手还在处理，它会等。超过这个上限就先停下，点「继续」可以接着来。长会话需要更长的时间。',
         'settings.idleWait.unit': '分钟',
+        'settings.explore': '检索预算',
+        'settings.explore.hint': '标准/深度润色时会先查资料。这是查资料总共能用多久、最多查几轮。查完后再改写，两者互不占用。',
+        'settings.explore.unit': '秒',
+        'settings.explore.rounds': '轮',
+        'settings.rewriteBudget': '改写预算',
+        'settings.rewriteBudget.hint': '模型写答案这一步最多等多久。给得太短，长草稿会来不及。',
         'auto.stop.interrupted': '你手动停下了，可以继续。',
         'auto.phase.hint': '点一下看详情',
         'auto.restart': '重新开始',
@@ -428,6 +434,12 @@ window.__ModuleLoader__.load({
         'settings.idleWait': 'How long to wait for the assistant',
         'settings.idleWait.hint': 'When the loop is ready to send but the assistant is still working, it waits. Past this limit it parks, and Continue picks it up again. Long conversations need more time.',
         'settings.idleWait.unit': 'minutes',
+        'settings.explore': 'Lookup budget',
+        'settings.explore.hint': 'A standard or deep polish looks things up first. This is how long that may take in total, and how many rounds it may spend. The rewrite runs separately with its own budget.',
+        'settings.explore.unit': 's',
+        'settings.explore.rounds': 'rounds',
+        'settings.rewriteBudget': 'Rewrite budget',
+        'settings.rewriteBudget.hint': 'How long the model may take to write the answer. Too short and a long draft will not finish.',
         'auto.stop.interrupted': 'You stopped it. You can continue.',
         'auto.phase.hint': 'Click for details',
         'auto.restart': 'Run again',
@@ -2385,6 +2397,9 @@ window.__ModuleLoader__.load({
         || (form.reasoningEffort ?? '') !== (saved.reasoningEffort ?? '')
         || form.defaultStrength !== saved.defaultStrength
         || (form.idleWaitMs ?? 0) !== (saved.idleWaitMs ?? 0)
+        || (form.exploreMs ?? 0) !== (saved.exploreMs ?? 0)
+        || (form.exploreRounds ?? 0) !== (saved.exploreRounds ?? 0)
+        || (form.timeoutMs ?? 0) !== (saved.timeoutMs ?? 0)
       )
 
       /** Switching to a fixed model needs a concrete one; default to the first. */
@@ -2477,6 +2492,53 @@ window.__ModuleLoader__.load({
                 }),
               }),
               h('span', { className: 'dsh-op-hint' }, t('settings.idleWait.unit')))),
+          // The two budgets behind a 标准/深度 polish: the lookup gets its own
+          // deadline so a slow search cannot consume the time the model needs to
+          // write the answer.
+          h('div', { className: 'dsh-op-field' },
+            h('div', { className: 'dsh-op-label' }, t('settings.explore')),
+            h('p', { className: 'dsh-op-hint' }, t('settings.explore.hint')),
+            h('div', { className: 'dsh-op-inline' },
+              h('input', {
+                className: 'dsh-op-input dsh-op-input--narrow',
+                type: 'number',
+                min: 5,
+                max: 300,
+                value: Math.round((form.exploreMs ?? 45000) / 1000),
+                onChange: event => setForm({
+                  ...form,
+                  exploreMs: Math.max(5, Math.min(300, Number(event.target.value) || 45)) * 1000,
+                }),
+              }),
+              h('span', { className: 'dsh-op-hint' }, t('settings.explore.unit')),
+              h('input', {
+                className: 'dsh-op-input dsh-op-input--narrow',
+                type: 'number',
+                min: 1,
+                max: 10,
+                value: form.exploreRounds ?? 4,
+                onChange: event => setForm({
+                  ...form,
+                  exploreRounds: Math.max(1, Math.min(10, Number(event.target.value) || 4)),
+                }),
+              }),
+              h('span', { className: 'dsh-op-hint' }, t('settings.explore.rounds')))),
+          h('div', { className: 'dsh-op-field' },
+            h('div', { className: 'dsh-op-label' }, t('settings.rewriteBudget')),
+            h('p', { className: 'dsh-op-hint' }, t('settings.rewriteBudget.hint')),
+            h('div', { className: 'dsh-op-inline' },
+              h('input', {
+                className: 'dsh-op-input dsh-op-input--narrow',
+                type: 'number',
+                min: 20,
+                max: 900,
+                value: Math.round((form.timeoutMs ?? 120000) / 1000),
+                onChange: event => setForm({
+                  ...form,
+                  timeoutMs: Math.max(20, Math.min(900, Number(event.target.value) || 120)) * 1000,
+                }),
+              }),
+              h('span', { className: 'dsh-op-hint' }, t('settings.explore.unit')))),
           h('div', { className: 'dsh-op-field' },
             h('div', { className: 'dsh-op-label' }, t('runs.title')),
             h('p', { className: 'dsh-op-hint' }, t('runs.hint')),

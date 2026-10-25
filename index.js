@@ -382,12 +382,16 @@ async function polishRoute(ctx, settings, req, res) {
   const research = RESEARCH[strength] ?? 'none'
   const requestId = typeof body?.requestId === 'string' && body.requestId !== '' ? body.requestId : null
   const job = requestId === null ? null : createJob(requestId, mode, research, typeof body?.sessionId === 'string' ? body.sessionId : '')
+  if (job !== null) {
+    job.exploreMs = settings.exploreMs
+    job.exploreRounds = settings.exploreRounds
+  }
 
   const controller = new AbortController()
   // The budget covers the rewrite only. The lookup runs under its own, shorter
   // deadline inside explore(), so a slow search can never eat the time the model
   // needs to actually answer.
-  const budgetMs = settings.timeoutMs + (research === 'none' ? 0 : MAX_EXPLORE_MS)
+  const budgetMs = settings.timeoutMs + (research === 'none' ? 0 : settings.exploreMs)
   const timer = setTimeout(() => controller.abort(), budgetMs)
   const model = `${selection.provider}/${selection.model}`
   // Run the work detached from the HTTP response.
@@ -1019,10 +1023,14 @@ async function explore(ctx, selection, input, research, job, agent, signal, syst
   const roots = allowedRoots(ctx, agent)
   const messages = [{ role: 'user', content: [{ type: 'text', text: input }] }]
   const findings = []
-  const deadline = Date.now() + MAX_EXPLORE_MS
+  // The lookup budget and round count come from settings via the job, falling back
+  // to the defaults when a call site did not set them.
+  const exploreMs = Number(job?.exploreMs) > 0 ? Number(job.exploreMs) : MAX_EXPLORE_MS
+  const exploreRounds = Number(job?.exploreRounds) > 0 ? Number(job.exploreRounds) : MAX_EXPLORE_ROUNDS
+  const deadline = Date.now() + exploreMs
   let total = 0
 
-  for (let round = 1; round <= MAX_EXPLORE_ROUNDS; round += 1) {
+  for (let round = 1; round <= exploreRounds; round += 1) {
     if (Date.now() > deadline) break
     const blocks = []
     let text = ''
@@ -1072,7 +1080,7 @@ async function explore(ctx, selection, input, research, job, agent, signal, syst
       // The model stopped calling tools. If it also wrote nothing, its turn ended
       // without a conclusion — treating that as an answer would hand the caller an
       // empty string and, for the driver, silently end the run. Nudge it once.
-      if (text.trim() === '' && reasoning.trim() !== '' && round < MAX_EXPLORE_ROUNDS) {
+      if (text.trim() === '' && reasoning.trim() !== '' && round < exploreRounds) {
         messages.push({
           id: `explore-${round}`,
           role: 'assistant',
@@ -1276,6 +1284,10 @@ function createJob(id, mode, research, sessionId) {
     trace: [],
     // Which session this belongs to, so every traced step can be archived.
     sessionId: typeof sessionId === 'string' ? sessionId : '',
+    // Per-job budgets, so a call can carry the configured values into the tool loop
+    // without threading settings through every function that touches a job.
+    exploreMs: 0,
+    exploreRounds: 0,
     at: Date.now(),
   }
   jobs.set(id, job)
@@ -1402,6 +1414,11 @@ function readSettings(config) {
     reasoningEffort: typeof config?.reasoningEffort === 'string' ? config.reasoningEffort : '',
     maxInputChars: positiveInt(config?.maxInputChars, DEFAULT_MAX_INPUT_CHARS),
     timeoutMs: positiveInt(config?.timeoutMs, DEFAULT_TIMEOUT_MS),
+    // The tool-lookup budget inside one polish, and how many search rounds it may
+    // spend. Both are separate from the rewrite budget: a slow search must never
+    // eat the time the model needs to write the answer.
+    exploreMs: Math.min(300_000, Math.max(5_000, positiveInt(config?.exploreMs, MAX_EXPLORE_MS))),
+    exploreRounds: Math.min(10, Math.max(1, positiveInt(config?.exploreRounds, MAX_EXPLORE_ROUNDS))),
     instruction: typeof config?.instruction === 'string' ? config.instruction.trim() : '',
     defaultStrength: STRENGTHS.includes(config?.defaultStrength) ? config.defaultStrength : 'strong',
     autoMode: config?.autoMode === 'goal' ? 'goal' : 'rounds',
@@ -1481,6 +1498,9 @@ async function persistSettings(ctx, next) {
       autoGoal: next.autoGoal,
       autoResearch: next.autoResearch,
       idleWaitMs: next.idleWaitMs,
+      exploreMs: next.exploreMs,
+      exploreRounds: next.exploreRounds,
+      timeoutMs: next.timeoutMs,
     }))
     return { persisted: true }
   } catch (error) {
@@ -1504,6 +1524,9 @@ async function settingsRoute(ctx, settings, req, res) {
         autoGoal: settings.autoGoal,
         autoResearch: settings.autoResearch,
         idleWaitMs: settings.idleWaitMs,
+        exploreMs: settings.exploreMs,
+        exploreRounds: settings.exploreRounds,
+        timeoutMs: settings.timeoutMs,
       },
       catalog,
       canPersist: ctx.fiber?.entry !== undefined && ctx.get('configEditor') !== undefined,
@@ -1526,6 +1549,9 @@ async function settingsRoute(ctx, settings, req, res) {
       60 * 60 * 1000,
       Math.max(30 * 1000, positiveInt(body?.idleWaitMs, settings.idleWaitMs)),
     ),
+    exploreMs: Math.min(300_000, Math.max(5_000, positiveInt(body?.exploreMs, settings.exploreMs))),
+    exploreRounds: Math.min(10, Math.max(1, positiveInt(body?.exploreRounds, settings.exploreRounds))),
+    timeoutMs: Math.min(900_000, Math.max(20_000, positiveInt(body?.timeoutMs, settings.timeoutMs))),
   }
   if (next.modelSource === 'fixed' && (next.provider === '' || next.model === '')) {
     sendJson(res, 400, { ok: false, code: 'no-model', error: '选择了固定模型，但没有指定具体模型' })
@@ -2058,6 +2084,10 @@ async function drivePilot(ctx, sessionId, agentRef, pilot) {
   if (pilot.running === true) return
   pilot.running = true
   const job = createJob(`autopilot-${sessionId}`, 'polish', pilot.research === 'none' ? 'none' : pilot.research, sessionId)
+  // The driver's own lookups use the same configured budgets as a manual polish;
+  // they ride on the pilot for the same reason idleWaitMs does.
+  job.exploreMs = Number(pilot.exploreMs) > 0 ? Number(pilot.exploreMs) : MAX_EXPLORE_MS
+  job.exploreRounds = Number(pilot.exploreRounds) > 0 ? Number(pilot.exploreRounds) : MAX_EXPLORE_ROUNDS
   // A resumed run keeps the clock it already spent; a fresh one starts now.
   if (!(pilot.startedAt > 0)) pilot.startedAt = Date.now()
   /** Wall-clock budget spent; checked before each round so a round never half-runs. */
@@ -2318,6 +2348,8 @@ async function autopilotRoute(ctx, settings, req, res) {
   // Carry the configured ceiling in on the pilot, so the loop needs no extra
   // plumbing and the value a resumed run uses is the one it was started with.
   pilot.idleWaitMs = settings.idleWaitMs
+  pilot.exploreMs = settings.exploreMs
+  pilot.exploreRounds = settings.exploreRounds
   pilot.waitingSince = null
   pilot.waitingBudgetMs = 0
   pilot.enabled = true
