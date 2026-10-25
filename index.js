@@ -1408,6 +1408,13 @@ function readSettings(config) {
     autoRounds: Math.min(MAX_AUTOPILOT_ROUNDS, positiveInt(config?.autoRounds, 5)),
     autoGoal: typeof config?.autoGoal === 'string' ? config.autoGoal.slice(0, 500) : '',
     autoResearch: ['none', 'local', 'web'].includes(config?.autoResearch) ? config.autoResearch : 'local',
+    // How long one round may wait for the assistant to finish its previous turn.
+    // A conversation with hundreds of turns can take much longer than the 5-minute
+    // default, so this is configurable rather than fixed.
+    idleWaitMs: Math.min(
+      60 * 60 * 1000,
+      Math.max(30 * 1000, positiveInt(config?.idleWaitMs, DEFAULT_IDLE_WAIT_MS)),
+    ),
   }
 }
 
@@ -1473,6 +1480,7 @@ async function persistSettings(ctx, next) {
       autoRounds: next.autoRounds,
       autoGoal: next.autoGoal,
       autoResearch: next.autoResearch,
+      idleWaitMs: next.idleWaitMs,
     }))
     return { persisted: true }
   } catch (error) {
@@ -1495,6 +1503,7 @@ async function settingsRoute(ctx, settings, req, res) {
         autoRounds: settings.autoRounds,
         autoGoal: settings.autoGoal,
         autoResearch: settings.autoResearch,
+        idleWaitMs: settings.idleWaitMs,
       },
       catalog,
       canPersist: ctx.fiber?.entry !== undefined && ctx.get('configEditor') !== undefined,
@@ -1513,6 +1522,10 @@ async function settingsRoute(ctx, settings, req, res) {
     autoRounds: Math.min(MAX_AUTOPILOT_ROUNDS, positiveInt(body?.autoRounds, settings.autoRounds)),
     autoGoal: typeof body?.autoGoal === 'string' ? body.autoGoal.slice(0, 500) : settings.autoGoal,
     autoResearch: ['none', 'local', 'web'].includes(body?.autoResearch) ? body.autoResearch : settings.autoResearch,
+    idleWaitMs: Math.min(
+      60 * 60 * 1000,
+      Math.max(30 * 1000, positiveInt(body?.idleWaitMs, settings.idleWaitMs)),
+    ),
   }
   if (next.modelSource === 'fixed' && (next.provider === '' || next.model === '')) {
     sendJson(res, 400, { ok: false, code: 'no-model', error: '选择了固定模型，但没有指定具体模型' })
@@ -1771,7 +1784,7 @@ const MAX_AUTOPILOT_ROUNDS = 50
  * the autopilot indistinguishable from a hung one: this ceiling turns that into a
  * stated stop with a reason the panel can show.
  */
-const MAX_IDLE_WAIT_MS = 5 * 60 * 1000
+const DEFAULT_IDLE_WAIT_MS = 5 * 60 * 1000
 
 /** One driver per Session; the state is what the toolbar polls. */
 const pilots = new Map()
@@ -2088,8 +2101,13 @@ async function drivePilot(ctx, sessionId, agentRef, pilot) {
       // The assistant may still be answering the previous message. Say so, and put a
       // ceiling on the wait: an assistant stuck in a very long turn would otherwise
       // look like a dead autopilot, because the loop can do nothing until it idles.
+      // The start time is published so the panel can show the wait in seconds
+      // instead of leaving the user to wonder whether it is stuck.
+      const idleBudget = Number(pilot.idleWaitMs) > 0 ? Number(pilot.idleWaitMs) : DEFAULT_IDLE_WAIT_MS
       pilot.state = 'waiting'
-      const idleDeadline = Date.now() + MAX_IDLE_WAIT_MS
+      pilot.waitingSince = Date.now()
+      pilot.waitingBudgetMs = idleBudget
+      const idleDeadline = Date.now() + idleBudget
       let idle = false
       while (pilot.enabled && Date.now() < idleDeadline) {
         idle = await Promise.race([
@@ -2098,11 +2116,14 @@ async function drivePilot(ctx, sessionId, agentRef, pilot) {
         ])
         if (idle) break
       }
+      const waitedMs = Date.now() - (pilot.waitingSince ?? Date.now())
+      pilot.waitingSince = null
+      pilot.waitingBudgetMs = 0
       if (!pilot.enabled) break
       if (!idle) {
         pilot.state = 'waiting'
         pilot.stopReason = 'busy'
-        pilot.error = '助手一直在处理上一条消息，自动驾驶先停下；等它空下来再点「自动」继续'
+        pilot.error = `等了 ${Math.round(waitedMs / 60000)} 分钟，助手还在处理上一轮；自动驾驶先停下，等它空下来再点「继续」`
         break
       }
       if (!pilot.enabled) break
@@ -2294,6 +2315,11 @@ async function autopilotRoute(ctx, settings, req, res) {
   pilot.stopReason = null
   pilot.emptyStreak = 0
   pilot.lastPrompt = ''
+  // Carry the configured ceiling in on the pilot, so the loop needs no extra
+  // plumbing and the value a resumed run uses is the one it was started with.
+  pilot.idleWaitMs = settings.idleWaitMs
+  pilot.waitingSince = null
+  pilot.waitingBudgetMs = 0
   pilot.enabled = true
   pilot.state = 'running'
   sendJson(res, 200, { ok: true, pilot })

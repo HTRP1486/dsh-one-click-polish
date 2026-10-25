@@ -273,6 +273,11 @@ window.__ModuleLoader__.load({
         'auto.phase.error': '出错',
         'auto.phase.stopped': '意外停止',
         'auto.phase.interrupted': '已中断',
+        'auto.waiting': '等待助手完成上一轮',
+        'auto.seconds': ' 秒',
+        'settings.idleWait': '等待助手完成上一轮的上限',
+        'settings.idleWait.hint': '自动驾驶要发下一条时，如果助手还在处理，它会等。超过这个上限就先停下，点「继续」可以接着来。长会话需要更长的时间。',
+        'settings.idleWait.unit': '分钟',
         'auto.stop.interrupted': '你手动停下了，可以继续。',
         'auto.phase.hint': '点一下看详情',
         'auto.restart': '重新开始',
@@ -418,6 +423,11 @@ window.__ModuleLoader__.load({
         'auto.phase.error': 'Failed',
         'auto.phase.stopped': 'Stopped',
         'auto.phase.interrupted': 'Interrupted',
+        'auto.waiting': 'Waiting for the assistant to finish its turn',
+        'auto.seconds': 's',
+        'settings.idleWait': 'How long to wait for the assistant',
+        'settings.idleWait.hint': 'When the loop is ready to send but the assistant is still working, it waits. Past this limit it parks, and Continue picks it up again. Long conversations need more time.',
+        'settings.idleWait.unit': 'minutes',
         'auto.stop.interrupted': 'You stopped it. You can continue.',
         'auto.phase.hint': 'Click for details',
         'auto.restart': 'Run again',
@@ -1404,6 +1414,15 @@ window.__ModuleLoader__.load({
                       // A finished run states its outcome here, which is the whole
                       // point of clicking a coloured button.
                       : `${autoLabel} · ${pilot.round ?? 0}/${pilot.mode === 'goal' ? '∞' : (pilot.rounds ?? 5)}`),
+                  // While it is parked on a busy assistant, show the wait ticking
+                  // instead of leaving a still panel that reads as a hang.
+                  autoPhase === 'running' && Number(pilot?.waitingSince) > 0
+                    ? h('div', { className: 'dsh-op-hint dsh-op-waiting' },
+                      `${t('auto.waiting')} · ${Math.max(0, Math.round((Date.now() - Number(pilot.waitingSince)) / 1000))}${t('auto.seconds')}`,
+                      Number(pilot.waitingBudgetMs) > 0
+                        ? ` / ${Math.round(Number(pilot.waitingBudgetMs) / 60000)}${t('auto.minutes')}`
+                        : '')
+                    : null,
                   pilot.context !== null && pilot.context !== undefined
                     ? h('div', { className: 'dsh-op-hint' },
                       `${t('auto.context')}：${pilot.context.messages} ${t('auto.context.messages')} / ${pilot.context.chars} ${t('auto.context.chars')}`,
@@ -2365,6 +2384,7 @@ window.__ModuleLoader__.load({
         || form.model !== saved.model
         || (form.reasoningEffort ?? '') !== (saved.reasoningEffort ?? '')
         || form.defaultStrength !== saved.defaultStrength
+        || (form.idleWaitMs ?? 0) !== (saved.idleWaitMs ?? 0)
       )
 
       /** Switching to a fixed model needs a concrete one; default to the first. */
@@ -2440,6 +2460,23 @@ window.__ModuleLoader__.load({
               }),
               h('p', { className: 'dsh-op-hint' }, t('settings.effort.hint')))
             : null,
+          h('div', { className: 'dsh-op-field' },
+            h('div', { className: 'dsh-op-label' }, t('settings.idleWait')),
+            h('p', { className: 'dsh-op-hint' }, t('settings.idleWait.hint')),
+            h('div', { className: 'dsh-op-inline' },
+              h('input', {
+                className: 'dsh-op-input dsh-op-input--narrow',
+                type: 'number',
+                min: 1,
+                max: 60,
+                value: Math.round((form.idleWaitMs ?? 300000) / 60000),
+                onChange: event => setForm({
+                  ...form,
+                  // Stored in milliseconds; the input speaks minutes.
+                  idleWaitMs: Math.max(1, Math.min(60, Number(event.target.value) || 5)) * 60000,
+                }),
+              }),
+              h('span', { className: 'dsh-op-hint' }, t('settings.idleWait.unit')))),
           h('div', { className: 'dsh-op-field' },
             h('div', { className: 'dsh-op-label' }, t('runs.title')),
             h('p', { className: 'dsh-op-hint' }, t('runs.hint')),
