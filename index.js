@@ -1747,6 +1747,10 @@ const DRIVER_SYSTEM = [
   '- 否则：输出下一条要发给助手的用户消息正文。不要加"下一步："之类的前缀，不要加引号。',
   '',
   '写消息时：',
+  '- 短。一到三句话，最多 120 字。这是聊天里的一条消息，不是一份需求文档。',
+  '- 用户写了什么目标就推进什么目标。不要把目标扩写成清单、章节编号、验收标准，' +
+    '也不要替用户追加他没提的要求（"请分阶段写""每段标注函数名""不确定的标注未确认"这类都是你自己加的，不要加）。',
+  '- 只引用对话里真实出现过的东西。日志里的 run id、文件路径可以用来指位置，但不能当成用户说过的话。',
   '- 具体、可执行，一次只推进一件事。',
   '- 接着对话里已经做到的地方往下走，不要重复已完成的步骤。',
   '- 助手答偏了或卡住了，就指出问题并给更明确的指令。',
@@ -1754,6 +1758,9 @@ const DRIVER_SYSTEM = [
   '',
   '语言：你的推理过程和要发出去的消息都用简体中文，即使对话或代码里出现英文也一样。文件名、路径、命令、代码原样保留，不要翻译。',
 ].join('\n')
+
+/** A next message longer than this is the driver writing an essay, not a prompt. */
+const MAX_DRIVER_MESSAGE_CHARS = 400
 
 const MAX_AUTOPILOT_ROUNDS = 50
 
@@ -1970,12 +1977,37 @@ async function composeNextPrompt(ctx, agent, selection, pilot, job, signal) {
     ].join('\n'), signal)
     if (retry.trim() !== '') {
       if (/^DONE\b/i.test(retry.trim())) return { done: true, text: '' }
-      return { done: false, text: retry.trim() }
+      return { done: false, text: clampMessage(retry.trim(), job) }
     }
   }
 
-  return { done: false, text }
+  return { done: false, text: clampMessage(text, job) }
 
+}
+
+/**
+ * Keep a driver message to something a person would actually type.
+ *
+ * With no ceiling the driver sometimes answered a one-line goal with a multi-page
+ * brief — numbered phases, acceptance criteria, requirements the user never asked
+ * for — and that landed in the conversation as if the user had written it. The
+ * prompt asks for brevity; this is the part that enforces it.
+ */
+function clampMessage(text, job) {
+  const trimmed = text.trim()
+  if (trimmed.length <= MAX_DRIVER_MESSAGE_CHARS) return trimmed
+  const cut = trimmed.slice(0, MAX_DRIVER_MESSAGE_CHARS)
+  // Prefer stopping at the last full sentence so the truncation reads as brevity.
+  const sentence = Math.max(cut.lastIndexOf('。'), cut.lastIndexOf('\n'))
+  const body = sentence > MAX_DRIVER_MESSAGE_CHARS * 0.6 ? cut.slice(0, sentence + 1) : cut
+  if (job !== null) {
+    appendLog(job.sessionId, {
+      run: job.id,
+      kind: 'conclusion',
+      text: `驱动 AI 的下一条消息过长（${trimmed.length} 字），已截到 ${body.length} 字`,
+    })
+  }
+  return body
 }
 
 /** One plain completion with no tools attached, for when the tool loop stalls. */
