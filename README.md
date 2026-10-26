@@ -1,10 +1,19 @@
 # 一键润色 / 扩写 / 自动驾驶
 
+[![npm](https://img.shields.io/npm/v/dsh-one-click-polish?label=npm)](https://www.npmjs.com/package/dsh-one-click-polish)
+[![license](https://img.shields.io/npm/l/dsh-one-click-polish)](LICENSE)
+
 给 DeepSeek Harness（dsh）桌面端的输入框加一组动作：**润色**、**扩写**、**自动驾驶**。所有模型调用都用**你当前会话正在用的那个模型**，结果直接写回输入框。
 
 - 润色：按三档深度重写草稿
 - 扩写：把一句话扩写成能直接开工的需求说明
 - 自动驾驶：让 AI 读对话、写下一步提示词、发给助手，一轮接一轮推进到你设定的目标
+
+一句安装：
+
+```
+dsh-one-click-polish
+```
 
 装好之后，输入框左下角多一排按钮：
 
@@ -26,15 +35,40 @@
 
 ## 安装
 
-### 界面里装（最省事）
+两种来源，功能完全一样：
 
-打开 dsh → 设置 → 插件 → 添加插件，在输入框里粘这个：
+| 来源 | 填什么 | 更新按钮 |
+| --- | --- | --- |
+| **npm** | `dsh-one-click-polish` | ✅ 有「可更新」 |
+| GitHub | `https://github.com/HTRP1486/dsh-one-click-polish` | ❌ 只能看提交 |
+
+### 方式一：npm（推荐）
+
+打开 dsh → 设置 → 插件 → 添加插件，输入框里就填**包名**：
+
+```
+dsh-one-click-polish
+```
+
+不用加 `npm:` 前缀，也不用加版本号（默认装 `latest`）。
+
+命令行等价写法：
+
+```bash
+dsh plugin --profile <你的 profile 名> install dsh-one-click-polish
+```
+
+**为什么推荐这个**：npm 上有版本号，dsh 能比对，所以插件列表里会出现「可更新」和「卸载」两个按钮。缺点是更新要走一遍发布流程。
+
+### 方式二：GitHub
+
+输入框里填仓库地址：
 
 ```
 https://github.com/HTRP1486/dsh-one-click-polish
 ```
 
-下面这些写法等价，都行：
+等价写法都行：
 
 ```
 https://github.com/HTRP1486/dsh-one-click-polish
@@ -44,22 +78,34 @@ github:HTRP1486/dsh-one-click-polish
 
 **末尾不要加斜杠**。加了会报 `a URL must point at a git repository or a tarball` —— dsh 的判断规则是 `^https?://主机/用户/仓库(.git)?$`，最后一段不允许出现 `/`。
 
-### 命令行装
-
-```bash
-dsh plugin --profile <你的 profile 名> install github:HTRP1486/dsh-one-click-polish
-```
-
-不知道 profile 名的话，看你 `~/.dsh/profiles/` 下的目录名，常见的是 `desktop`。
+**为什么用它**：跟最新提交走，不用等发版。但没有「可更新」按钮——想更新就是重装一次（`remove` 后 `install`）。
 
 ### 其他方式
 
 | 方式 | 做法 |
 | --- | --- |
-| 本地目录 | target 填仓库的**绝对路径**，如 `D:\Documents\dsh-one-click-polish`（相对路径会被拒绝） |
+| 本地目录 | target 填仓库的**绝对路径**，如 `D:\Documents\dsh-one-click-polish`。改代码即时生效，适合开发 |
 | Release 包 | 从 [Releases](https://github.com/HTRP1486/dsh-one-click-polish/releases) 下 `.tgz`，target 填该文件的绝对路径 |
 
+### 三种方式怎么选
+
+```
+只想用        → npm
+要用最新代码   → GitHub
+自己在改它     → 本地目录（link）
+```
+
 装完**重启 dsh**。判断是否成功：输入框左下角出现 `润色 | 深度 | 扩写 | 自动`，设置里多出「润色 / 扩写」一页。
+
+### 版本号
+
+三个地方保持同步，每次发布一起改：
+
+| 位置 | 当前 |
+| --- | --- |
+| `package.json` 的 `version` | `1.2.0` |
+| npm 的 `latest` 标签 | `1.2.0` |
+| GitHub 的 tag / Release | `v1.2.0` |
 
 ### 装不上时
 
