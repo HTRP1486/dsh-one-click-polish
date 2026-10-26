@@ -26,20 +26,49 @@
 
 ## 安装
 
+### 界面里装（最省事）
+
+打开 dsh → 设置 → 插件 → 添加插件，在输入框里粘这个：
+
+```
+https://github.com/HTRP1486/dsh-one-click-polish
+```
+
+下面这些写法等价，都行：
+
+```
+https://github.com/HTRP1486/dsh-one-click-polish
+https://github.com/HTRP1486/dsh-one-click-polish.git
+github:HTRP1486/dsh-one-click-polish
+```
+
+**末尾不要加斜杠**。加了会报 `a URL must point at a git repository or a tarball` —— dsh 的判断规则是 `^https?://主机/用户/仓库(.git)?$`，最后一段不允许出现 `/`。
+
+### 命令行装
+
 ```bash
 dsh plugin --profile <你的 profile 名> install github:HTRP1486/dsh-one-click-polish
 ```
 
 不知道 profile 名的话，看你 `~/.dsh/profiles/` 下的目录名，常见的是 `desktop`。
 
-装完**重启 dsh**。判断是否成功：输入框左下角出现 `润色 | 深度 | 扩写 | 自动`，设置里多出「润色 / 扩写」一页。
-
-其他安装方式：
+### 其他方式
 
 | 方式 | 做法 |
 | --- | --- |
-| 本地目录 | `install_bundle` 的 target 填仓库路径，走 `link:` |
-| Release 包 | 从 [Releases](https://github.com/HTRP1486/dsh-one-click-polish/releases) 下 `.tgz`，target 填该文件路径 |
+| 本地目录 | target 填仓库的**绝对路径**，如 `D:\Documents\dsh-one-click-polish`（相对路径会被拒绝） |
+| Release 包 | 从 [Releases](https://github.com/HTRP1486/dsh-one-click-polish/releases) 下 `.tgz`，target 填该文件的绝对路径 |
+
+装完**重启 dsh**。判断是否成功：输入框左下角出现 `润色 | 深度 | 扩写 | 自动`，设置里多出「润色 / 扩写」一页。
+
+### 装不上时
+
+| 报错 | 原因 |
+| --- | --- |
+| `a URL must point at a git repository or a tarball` | 地址末尾多了斜杠，或不是 `.tgz` 结尾 |
+| `a local path must be absolute` | 填了相对路径或 `./xxx` |
+| `unmet DSH version requirement` | 你的 dsh 版本低于插件要求 |
+| 装完没生效 | 没重启。改 profile 的 bundles 后必须重启，刷新页面不够 |
 
 ## 用法
 
