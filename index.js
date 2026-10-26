@@ -540,16 +540,26 @@ function allowedRoots(ctx, agent) {
 /**
  * This profile's directory.
  *
- * `DSH_PROFILE_DIR` is set for shell tool calls, not for the desktop host, so
- * the working directory of the host process is the fallback — and it is only
- * trusted when it actually looks like a profile.
+ * `DSH_PROFILE_DIR` is set for shell tool calls, not for the desktop host, so the
+ * working directory of the host process is the fallback — and it is only trusted
+ * when it actually looks like a profile.
+ *
+ * The plugin's own source tree also contains a `cordis.patch.yml`, so a host that
+ * happened to run with that directory as its cwd would pass the shape check and
+ * then write the thinking log — real conversation text and file paths — into the
+ * repository. That is refused explicitly: runtime state never lands next to the
+ * code it belongs to.
  */
 function profileDir() {
   const fromEnv = process.env.DSH_PROFILE_DIR
   if (typeof fromEnv === 'string' && fromEnv !== '') return fromEnv
   try {
     const cwd = process.cwd()
-    return existsSync(join(cwd, 'cordis.patch.yml')) ? cwd : null
+    if (!existsSync(join(cwd, 'cordis.patch.yml'))) return null
+    // The bundle patch sits in the package root; a profile never does. If both are
+    // present this is the source tree, not a profile.
+    if (existsSync(join(cwd, 'package.json')) && existsSync(join(cwd, 'client.js'))) return null
+    return cwd
   } catch {
     return null
   }

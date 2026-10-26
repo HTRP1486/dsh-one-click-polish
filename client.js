@@ -2672,7 +2672,8 @@ window.__ModuleLoader__.load({
       ctx.slots.inject('settings.section', () => ctx.slots.register({
         name: 'settings.section',
         id: 'one-click-polish',
-        // Right after WorkBuddy 网关 (36), so the plugin pages stay together.
+        // Sits after the harness's own sections so a plugin page does not outrank
+        // them in the settings list.
         order: 37,
         label: () => t('settings.nav'),
       }, props => h(SettingsPage, { ...props, t })))
