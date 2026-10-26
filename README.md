@@ -32,7 +32,7 @@ dsh plugin --profile <你的 profile 名> install github:HTRP1486/dsh-one-click-
 | 标准 | AI 翻项目目录和 dsh 配置目录，找相关文件 | 改措辞和句式、去冗余 |
 | 深度 | 标准 + 联网检索（必应 / 百度 / GitHub） | 重组结构、拆长句、换精准用词 |
 
-检索不是关键词匹配：Host 把 `list_dir` / `read_file` / `search_files` / `search_content` / `web_search` 交给模型，由它自己决定查什么、要不要再追一轮（最多 6 轮、90 秒、6000 字资料）。**只读**，越出项目目录与 dsh 配置目录的路径会被拒绝。
+检索不是关键词匹配：Host 把 `list_dir` / `read_file` / `search_files` / `search_content` / `web_search` 交给模型，由它自己决定查什么、要不要再追一轮。轮数、检索时长、改写时长都能在设置里调，默认 4 轮 / 45 秒 / 120 秒。**只读**，越出项目目录与 dsh 配置目录的路径会被拒绝。
 
 ### 扩写
 
@@ -95,6 +95,22 @@ search_files  d dsh-one-click-polish  - cordis.patch.yml
 
 这份记录来自同一个任务表（`GET …/progress?id=autopilot-<sessionId>`），所以润色/扩写时那个进度窗也能看到同样的过程。
 
+**右侧贴边窗口**：点「在右侧显示」，思考窗会滑入屏幕右缘，跟着当前对话实时刷新（每 500ms 一轮），可以上下翻、折叠、关闭。切到别的对话时它会自己跟过去；那个对话没有记录时就是空的。
+
+**按钮会报告上一次怎么结束的**：
+
+| 按钮 | 含义 |
+| --- | --- |
+| 🔵 转圈 `自动 2/5` | 正在跑 |
+| 🟢 `已完成` | 跑满轮数，或驱动 AI 判断目标达成 |
+| 🔴 `出错` | 出错停下，点开能看到错误全文 |
+| 🟡 `意外停止` | 它自己停下了：想不出下一步、助手一直在忙、或到了时长上限 |
+| 🟡 `已中断` | 你手动停的 |
+
+点开按钮能看到为什么停、读了哪些文件、完整思考记录，底部有「从中断处继续」（停下的情况）或「重新开始」+「清除状态」。
+
+**设置页有每个对话的自动运行日志**：它读了哪些文件、调用了什么、发了什么，按会话归档，重启后仍在。长工具行和长思考行默认收起，点一下展开，收起时保留首行预览。
+
 ## 换窗口 / 重启 会怎样
 
 | 场景 | 结果 |
@@ -114,6 +130,10 @@ search_files  d dsh-one-click-polish  - cordis.patch.yml
 | 模型来源 | `跟随当前对话`（默认）用输入框里选中的模型；`固定模型` 始终用指定那个 |
 | 模型 | 选 `固定模型` 后出现，带搜索的下拉框，按供应商分组 |
 | 思考程度 | 照 dsh 的 `Default / Low / High / Max` 做，**选项按该模型实际支持的档位生成**，不支持就整栏隐藏；换模型时旧档位自动回落 |
+| 等待助手完成上一轮的上限 | 自动驾驶要发下一条时助手仍在忙，等多久放弃。默认 5 分钟，可到 60 |
+| 检索预算 | 查资料总共能用多久、最多几轮。默认 45 秒 / 4 轮 |
+| 改写预算 | 模型写答案这一步最多等多久。默认 120 秒 |
+| 自动运行日志 | 每个对话的自动驾驶记录，按会话归档 |
 
 改动先留在页面上，点 `保存` 才写入 profile，`撤销修改` 回到上次保存的状态。
 
@@ -130,7 +150,10 @@ search_files  d dsh-one-click-polish  - cordis.patch.yml
     reasoningEffort: ''      # '' = 默认；否则必须是该模型支持的档位
     defaultStrength: strong  # light | standard | strong
     maxInputChars: 12000     # 单次输入字符上限
-    timeoutMs: 120000        # 单次请求超时
+    timeoutMs: 120000        # 单次改写预算
+    exploreMs: 45000         # 检索预算
+    exploreRounds: 4         # 最多检索几轮
+    idleWaitMs: 300000       # 等助手空下来的上限
     instruction: ''          # 追加给模型的额外要求
 ```
 
@@ -149,9 +172,10 @@ search_files  d dsh-one-click-polish  - cordis.patch.yml
 | --- | --- | --- |
 | POST | `/polish` | 提交润色/扩写任务，返回 202 + requestId |
 | GET | `/progress?id=` | 轮询任务状态与结果 |
-| GET/POST | `/settings` | 读/写设置与模型目录 |
+| GET | `/settings` | 读/写设置与模型目录 |
 | GET | `/efforts?provider=&model=` | 某模型支持的思考档位 |
 | GET/POST | `/autopilot` | 读/写自动驾驶状态，`?resumable=1` 列可恢复的运行 |
+| GET | `/runs` | 按会话归档的自动运行日志；`?sessionId=` 取某会话 |
 | GET | `/status` | 当前会话解析到的模型 |
 | GET | `/diag` | 排查用：会话、目录、上下文快照 |
 
@@ -160,9 +184,10 @@ search_files  d dsh-one-click-polish  - cordis.patch.yml
 | 文件 | 作用 |
 | --- | --- |
 | `index.js` | Host 半身：模型解析、检索、改写、轮询任务、自动驾驶驱动 |
-| `client.js` | 浏览器半身：工具栏按钮组、进度窗、设置页 |
+| `client.js` | 浏览器半身：工具栏按钮组、进度窗、右侧思考窗、设置页 |
 | `cordis.patch.yml` | 插件行声明 |
 | `locale/*.json` | 插件管理页的标题与描述 |
+| `TESTING.md` | 测试纪律：自动驾驶会真往会话里发消息，不能拿真实对话试 |
 
 ## 许可
 
