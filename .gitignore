@@ -1,5 +1,12 @@
-# Runtime state written by the plugin itself
+# Runtime state written by the plugin itself.
+#
+# The thinking log is the most private thing this plugin produces: it stores the
+# driver's reasoning, every tool name, and file paths from the user's real
+# conversations. It is written to the profile directory, never to this repo, but
+# an ignore rule costs nothing and a stray `cp -r` should not be able to publish it.
+.one-click-polish-log.json
 .one-click-polish-autopilot.json
+.one-click-polish*.json
 
 # Editors / OS
 .vscode/
@@ -12,3 +19,7 @@ desktop.ini
 node_modules/
 npm-debug.log*
 pnpm-debug.log*
+
+# Packed artifacts
+*.tgz
+dist/
