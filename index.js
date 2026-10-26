@@ -506,10 +506,10 @@ const RESEARCH = { light: 'none', standard: 'local', strong: 'web' }
 /**
  * Names that must never be opened or quoted, whatever the working directory is.
  *
- * The workspace root is whatever the user happened to open a session on — here it
- * was `D:\Documents`, which contains cookies, chat databases and unrelated
+ * The workspace root is whatever directory the user happened to open a session on.
+ * That directory routinely holds browser cookies, chat databases and unrelated
  * repositories. A copy editor has no business reading any of that, so the guard
- * is by name rather than by trusting the directory.
+ * works by name rather than by trusting the directory to be tidy.
  */
 // Matched against the whole name: `auth` and `session` are common enough that a
 // substring rule would hide ordinary documents like `author.md`.
