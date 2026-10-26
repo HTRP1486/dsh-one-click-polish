@@ -23,7 +23,8 @@ export const name = 'one-click-polish'
 export const inject = ['llm', 'agents', 'webServer']
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const PREFIX = '/plugins/dsh-one-click-polish'
 const DEFAULT_MAX_INPUT_CHARS = 12000
@@ -464,6 +465,61 @@ async function produceRewrite(ctx, settings, mode, strength, research, input, ag
   const text = await runModel(ctx, selection, input, system, controller.signal)
   markStep(job, 'rewrite', 'done')
   return text
+}
+
+/**
+ * This plugin's own version, and the newest one on npm.
+ *
+ * dsh's plugin page only offers an update button for bundles in its official
+ * catalogue, because `installTarget` is computed from that catalogue. A third-party
+ * plugin therefore has no update affordance there at all, so the question "is there
+ * a newer version?" is answered here instead, on the plugin's own settings page.
+ */
+const VERSION_TTL_MS = 10 * 60 * 1000
+let versionCache = { at: 0, latest: null, error: null }
+
+async function versionInfo() {
+  let current = ''
+  try {
+    // Resolve from this module rather than the process cwd: the Host may run with
+    // any working directory, and this file sits next to its own manifest.
+    const here = dirname(fileURLToPath(import.meta.url))
+    const manifest = JSON.parse(readFileSync(join(here, 'package.json'), 'utf8'))
+    current = typeof manifest.version === 'string' ? manifest.version : ''
+  } catch { /* a missing manifest just means no version to report */ }
+
+  if (versionCache.latest !== null && Date.now() - versionCache.at < VERSION_TTL_MS) {
+    return { current, latest: versionCache.latest, error: null, checked: versionCache.at }
+  }
+
+  // The registry is the only source of truth for "what is published"; a failed
+  // lookup must not look like "you are up to date".
+  let latest = null
+  let error = null
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 8000)
+    const response = await fetch('https://registry.npmjs.org/dsh-one-click-polish/latest', {
+      signal: controller.signal,
+      headers: { accept: 'application/json' },
+    })
+    clearTimeout(timer)
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const payload = await response.json()
+    latest = typeof payload?.version === 'string' ? payload.version : null
+  } catch (failure) {
+    error = textOf(failure)
+  }
+  versionCache = { at: Date.now(), latest, error }
+  return { current, latest, error, checked: Date.now() }
+}
+
+async function versionRoute(req, res) {
+  // `refresh=1` drops the TTL cache: the panel offers a recheck, and a button that
+  // silently answers from cache would look broken.
+  const url = new URL(req.url ?? '/', 'http://localhost')
+  if (url.searchParams.get('refresh') === '1') versionCache.at = 0
+  sendJson(res, 200, { ok: true, ...(await versionInfo()) })
 }
 
 async function statusRoute(ctx, req, res) {
@@ -2465,6 +2521,13 @@ export function apply(ctx, config) {
     } catch { /* best-effort */ }
   })
 
+
+  ctx.effect(() => server.register({
+    kind: 'exact',
+    path: `${PREFIX}/version`,
+    handler: (req, res) => versionRoute(req, res)
+      .catch(error => sendJson(res, 500, { ok: false, error: textOf(error) })),
+  }), 'one-click-polish: version route')
 
   ctx.effect(() => server.register({
     kind: 'exact',

@@ -41,6 +41,7 @@ window.__ModuleLoader__.load({
     const PROGRESS = ENDPOINT.replace(/\/polish$/, '/progress')
     const PILOT = ENDPOINT.replace(/\/polish$/, '/autopilot')
     const RUNS = ENDPOINT.replace(/\/polish$/, '/runs')
+    const VERSION = ENDPOINT.replace(/\/polish$/, '/version')
 
     /** The in-flight request, so the panel can cancel it. */
     let activeAbort = null
@@ -281,6 +282,13 @@ window.__ModuleLoader__.load({
         'settings.idleWait': '等待助手完成上一轮的上限',
         'settings.idleWait.hint': '自动驾驶要发下一条时，如果助手还在处理，它会等。超过这个上限就先停下，点「继续」可以接着来。长会话需要更长的时间。',
         'settings.idleWait.unit': '分钟',
+        'version.current': '当前版本',
+        'version.latest': '已是最新',
+        'version.newest': 'npm 上有',
+        'version.checking': '检查更新中…',
+        'version.unknown': '查不到最新版本',
+        'version.how': '怎么更新',
+        'version.recheck': '重新检查',
         'settings.explore': '检索预算',
         'settings.explore.hint': '标准/深度润色时会先查资料。这是查资料总共能用多久、最多查几轮。查完后再改写，两者互不占用。',
         'settings.explore.unit': '秒',
@@ -440,6 +448,13 @@ window.__ModuleLoader__.load({
         'settings.idleWait': 'How long to wait for the assistant',
         'settings.idleWait.hint': 'When the loop is ready to send but the assistant is still working, it waits. Past this limit it parks, and Continue picks it up again. Long conversations need more time.',
         'settings.idleWait.unit': 'minutes',
+        'version.current': 'Version',
+        'version.latest': 'Up to date',
+        'version.newest': 'npm has',
+        'version.checking': 'Checking for updates…',
+        'version.unknown': 'Cannot reach npm',
+        'version.how': 'How to update',
+        'version.recheck': 'Check again',
         'settings.explore': 'Lookup budget',
         'settings.explore.hint': 'A standard or deep polish looks things up first. This is how long that may take in total, and how many rounds it may spend. The rewrite runs separately with its own budget.',
         'settings.explore.unit': 's',
@@ -564,6 +579,21 @@ window.__ModuleLoader__.load({
 .dsh-op-head{margin-bottom:18px}
 .dsh-op-h2{margin:0 0 4px;font-size:17px;font-weight:600;line-height:26px;letter-spacing:-.01em}
 .dsh-op-sub{margin:0;color:var(--dsw-alias-label-secondary);font-size:12.5px;line-height:20px}
+/* Version line: this plugin's own update affordance. dsh's plugin page only
+   computes installTarget for bundles in its official catalogue, so a third-party
+   plugin has no update button there. */
+.dsh-op-version{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:9px;
+  font-size:11.5px;line-height:17px;color:var(--dsw-alias-label-secondary)}
+.dsh-op-versionNow{font-variant-numeric:tabular-nums;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;
+  background:var(--dsw-alias-bg-base);border-radius:999px;padding:1px 8px;
+  color:var(--dsw-alias-label-primary)}
+.dsh-op-versionNew{display:flex;flex-wrap:wrap;align-items:center;gap:8px;
+  font-size:11.5px;color:var(--dsw-alias-state-warn-primary)}
+.dsh-op-versionBad{color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));opacity:.8}
+/* The busy-wait line: a live counter, so it is monospaced and does not reflow as
+   the seconds tick, and it holds a fixed height so the panel does not jump. */
+.dsh-op-waiting{font-variant-numeric:tabular-nums;min-height:17px}
 .dsh-op-card{display:flex;flex-direction:column;gap:2px;padding:2px 16px;
   background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);
   border-radius:14px}
@@ -2266,6 +2296,8 @@ window.__ModuleLoader__.load({
       const [form, setForm] = useState(null)     // what the user is editing
       const [efforts, setEfforts] = useState({ state: 'idle', list: [], defaultEffort: null })
       const [saveState, setSaveState] = useState({ state: 'idle', message: '' })
+      // null while the first lookup is in flight; afterwards { current, latest, error }
+      const [version, setVersion] = useState(null)
       const [runs, setRuns] = useState([])
       const [runsPick, setRunsPick] = useState(null)
       const [runEntries, setRunEntries] = useState([])
@@ -2316,6 +2348,24 @@ window.__ModuleLoader__.load({
       }, [])
 
       useEffect(() => { load() }, [load])
+
+      /** Read this plugin's version against npm. Cached on the Host for 10 minutes. */
+      const checkVersion = useCallback(async (force) => {
+        try {
+          const response = await fetch(force === true ? `${VERSION}?refresh=1` : VERSION)
+          const payload = await response.json()
+          if (payload?.ok !== true) throw new Error(payload?.error ?? 'HTTP error')
+          setVersion({
+            current: typeof payload.current === 'string' ? payload.current : '',
+            latest: typeof payload.latest === 'string' ? payload.latest : null,
+            error: typeof payload.error === 'string' ? payload.error : null,
+          })
+        } catch (failure) {
+          setVersion({ current: '', latest: null, error: String(failure?.message ?? failure) })
+        }
+      }, [])
+
+      useEffect(() => { void checkVersion(false) }, [checkVersion])
 
       /** Sessions that have an archived run, newest first. */
       const loadRuns = useCallback(async () => {
@@ -2462,7 +2512,35 @@ window.__ModuleLoader__.load({
       const pageBody = h('div', { className: 'dsh-op-page' },
         h('div', { className: 'dsh-op-head' },
           h('h2', { className: 'dsh-op-h2' }, t('settings.title')),
-          h('p', { className: 'dsh-op-sub' }, t('settings.sub'))),
+          h('p', { className: 'dsh-op-sub' }, t('settings.sub')),
+          // dsh's own plugin page can only offer 更新 for bundles in its official
+          // catalogue, so a third-party plugin gets no update affordance there.
+          // The version line puts that question here instead.
+          h('div', { className: 'dsh-op-version' },
+            h('span', { className: 'dsh-op-versionNow' },
+              `${t('version.current')} ${version.current === '' ? '?' : version.current}`),
+            version === null
+              ? h('span', { className: 'dsh-op-hint dsh-op-hint--inline' }, t('version.checking'))
+              : version.error !== null && version.error !== ''
+                ? h('span', { className: 'dsh-op-versionBad' },
+                  `${t('version.unknown')} · ${version.error}`)
+                : version.latest === null
+                  ? h('span', { className: 'dsh-op-hint dsh-op-hint--inline' }, t('version.unknown'))
+                  : version.latest !== version.current
+                    ? h('div', { className: 'dsh-op-versionNew' },
+                      h('span', null, `${t('version.newest')} ${version.latest}`),
+                      h('a', {
+                        className: 'dsh-op-link',
+                        href: 'https://www.npmjs.com/package/dsh-one-click-polish',
+                        target: '_blank',
+                        rel: 'noreferrer',
+                      }, t('version.how')),
+                      h('button', {
+                        type: 'button',
+                        className: 'dsh-op-link',
+                        onClick: () => { void checkVersion(true) },
+                      }, t('version.recheck')))
+                    : h('span', { className: 'dsh-op-hint dsh-op-hint--inline' }, t('version.latest')))),
         h('div', { className: 'dsh-op-card' },
           h('div', { className: 'dsh-op-cardTitle' }, t('settings.group.model')),
           h('div', { className: 'dsh-op-field' },
