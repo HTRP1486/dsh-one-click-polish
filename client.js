@@ -274,6 +274,7 @@ window.__ModuleLoader__.load({
         'auto.phase.stopped': '意外停止',
         'auto.phase.interrupted': '已中断',
         'auto.waiting': '等待助手完成上一轮',
+        'auto.waitingOn': '等待助手完成：',
         'auto.seconds': ' 秒',
         'settings.idleWait': '等待助手完成上一轮的上限',
         'settings.idleWait.hint': '自动驾驶要发下一条时，如果助手还在处理，它会等。超过这个上限就先停下，点「继续」可以接着来。长会话需要更长的时间。',
@@ -430,6 +431,7 @@ window.__ModuleLoader__.load({
         'auto.phase.stopped': 'Stopped',
         'auto.phase.interrupted': 'Interrupted',
         'auto.waiting': 'Waiting for the assistant to finish its turn',
+        'auto.waitingOn': 'Waiting for the assistant: ',
         'auto.seconds': 's',
         'settings.idleWait': 'How long to wait for the assistant',
         'settings.idleWait.hint': 'When the loop is ready to send but the assistant is still working, it waits. Past this limit it parks, and Continue picks it up again. Long conversations need more time.',
@@ -1430,7 +1432,12 @@ window.__ModuleLoader__.load({
                   // instead of leaving a still panel that reads as a hang.
                   autoPhase === 'running' && Number(pilot?.waitingSince) > 0
                     ? h('div', { className: 'dsh-op-hint dsh-op-waiting' },
-                      `${t('auto.waiting')} · ${Math.max(0, Math.round((Date.now() - Number(pilot.waitingSince)) / 1000))}${t('auto.seconds')}`,
+                      // What it is waiting on, then how long it has waited: the name
+                      // tells the user whether this is a ten-second or ten-minute wait.
+                      typeof pilot?.waitingOn === 'string' && pilot.waitingOn !== ''
+                        ? `${t('auto.waitingOn')}${pilot.waitingOn} · `
+                        : `${t('auto.waiting')} · `,
+                      `${Math.max(0, Math.round((Date.now() - Number(pilot.waitingSince)) / 1000))}${t('auto.seconds')}`,
                       Number(pilot.waitingBudgetMs) > 0
                         ? ` / ${Math.round(Number(pilot.waitingBudgetMs) / 60000)}${t('auto.minutes')}`
                         : '')

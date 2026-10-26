@@ -1812,6 +1812,30 @@ const MAX_AUTOPILOT_ROUNDS = 50
  */
 const DEFAULT_IDLE_WAIT_MS = 5 * 60 * 1000
 
+/**
+ * What each session's assistant is doing right now.
+ *
+ * The autopilot has to wait for the assistant to go idle, and "waiting" alone tells
+ * the user nothing about whether that will take ten seconds or ten minutes. Tool
+ * dispatch is the cheapest honest signal: a turn spends most of its wall clock
+ * inside tool calls, so the last one started is a fair name for the work.
+ */
+const activity = new Map()
+
+function noteActivity(sessionId, label) {
+  if (typeof sessionId !== 'string' || sessionId === '') return
+  activity.set(sessionId, { label, at: Date.now() })
+}
+
+/** The label for a session, or '' when nothing recent is known. */
+function describeActivity(sessionId) {
+  const record = activity.get(String(sessionId))
+  if (record === undefined) return ''
+  // A stale label is worse than none: the assistant moved on long ago.
+  if (Date.now() - record.at > 10 * 60 * 1000) return ''
+  return record.label
+}
+
 /** One driver per Session; the state is what the toolbar polls. */
 const pilots = new Map()
 
@@ -2140,20 +2164,29 @@ async function drivePilot(ctx, sessionId, agentRef, pilot) {
       const idleDeadline = Date.now() + idleBudget
       let idle = false
       while (pilot.enabled && Date.now() < idleDeadline) {
+        // Name the work being waited on, so the panel can show what the assistant
+        // is actually doing instead of only how long it has been doing it.
+        pilot.waitingOn = typeof pilot.describeActivity === 'function'
+          ? pilot.describeActivity()
+          : ''
         idle = await Promise.race([
           agent.whenIdle().then(() => true),
-          new Promise(resolve => setTimeout(() => resolve(false), 5000)),
+          new Promise(resolve => setTimeout(resolve, 5000)).then(() => false),
         ])
         if (idle) break
       }
       const waitedMs = Date.now() - (pilot.waitingSince ?? Date.now())
       pilot.waitingSince = null
       pilot.waitingBudgetMs = 0
+      const waitedOn = pilot.waitingOn ?? ''
+      pilot.waitingOn = ''
       if (!pilot.enabled) break
       if (!idle) {
         pilot.state = 'waiting'
         pilot.stopReason = 'busy'
-        pilot.error = `等了 ${Math.round(waitedMs / 60000)} 分钟，助手还在处理上一轮；自动驾驶先停下，等它空下来再点「继续」`
+        pilot.error = waitedOn === ''
+          ? `等了 ${Math.round(waitedMs / 60000)} 分钟，助手还在处理上一轮；自动驾驶先停下，等它空下来再点「继续」`
+          : `等了 ${Math.round(waitedMs / 60000)} 分钟，助手还在${waitedOn}；自动驾驶先停下，等它空下来再点「继续」`
         break
       }
       if (!pilot.enabled) break
@@ -2350,6 +2383,9 @@ async function autopilotRoute(ctx, settings, req, res) {
   pilot.idleWaitMs = settings.idleWaitMs
   pilot.exploreMs = settings.exploreMs
   pilot.exploreRounds = settings.exploreRounds
+  // Reads the live activity feed, so the panel can say what the assistant is doing.
+  pilot.describeActivity = () => describeActivity(sessionId)
+  pilot.waitingOn = ''
   pilot.waitingSince = null
   pilot.waitingBudgetMs = 0
   pilot.enabled = true
@@ -2389,6 +2425,36 @@ async function runsRoute(ctx, req, res) {
 export function apply(ctx, config) {
   const settings = readSettings(config)
   const server = ctx.webServer
+
+  // The two signals that say what a session is busy with. Both are OBSERVERS.
+  //
+  // `tools/result` rather than `tools/execute`: the latter is a waterfall whose
+  // listener contract is `(exec, next) => Promise<ToolExecutionResult>`, so a
+  // listener that returns nothing replaces the tool's real result with undefined
+  // and every dispatch in the process starts failing on `.isError`. An observer
+  // cannot do that — its return value is ignored. Same reason `agent/status` and
+  // not a waterfall: nothing here needs to change an outcome.
+  ctx.on('tools/result', (exec) => {
+    try {
+      // ToolExecutionInput carries the fields directly: `agent?.id` and `name`.
+      const sessionId = exec?.agent?.id
+      const name = exec?.name
+      if (sessionId !== undefined && typeof name === 'string' && name !== '') {
+        noteActivity(String(sessionId), `调用 ${name}`)
+      }
+    } catch { /* attribution is best-effort */ }
+  })
+
+  ctx.on('agent/status', (payload) => {
+    try {
+      const sessionId = payload?.agent?.id
+      if (sessionId === undefined) return
+      // A running agent with no tool call in flight is generating; idle means the
+      // turn is over, which is exactly what the loop is waiting for.
+      noteActivity(String(sessionId), payload.status === 'idle' ? '' : '生成回复中')
+    } catch { /* best-effort */ }
+  })
+
 
   ctx.effect(() => server.register({
     kind: 'exact',
