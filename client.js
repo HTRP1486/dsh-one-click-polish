@@ -2519,18 +2519,18 @@ window.__ModuleLoader__.load({
         h('div', { className: 'dsh-op-head' },
           h('h2', { className: 'dsh-op-h2' }, t('settings.title')),
           h('p', { className: 'dsh-op-sub' }, t('settings.sub')),
-          // dsh's own plugin page can only offer 更新 for bundles in its official
-          // catalogue, so a third-party plugin gets no update affordance there.
-          // The version line puts that question here instead.
+          // `version` is null until the lookup resolves, so every read of it has to
+          // go through a fallback. Reading `.current` straight off null threw during
+          // render and took the whole settings page down with it.
           h('div', { className: 'dsh-op-version' },
             h('span', { className: 'dsh-op-versionNow' },
-              `${t('version.current')} ${version.current === '' ? '?' : version.current}`),
+              `${t('version.current')} ${typeof version?.current === 'string' && version.current !== '' ? version.current : '?'}`),
             version === null
               ? h('span', { className: 'dsh-op-hint dsh-op-hint--inline' }, t('version.checking'))
-              : version.error !== null && version.error !== ''
+              : version.error !== null && version.error !== undefined && version.error !== ''
                 ? h('span', { className: 'dsh-op-versionBad' },
                   `${t('version.unknown')} · ${version.error}`)
-                : version.latest === null
+                : version.latest === null || version.latest === undefined
                   ? h('span', { className: 'dsh-op-hint dsh-op-hint--inline' }, t('version.unknown'))
                   : version.latest !== version.current
                     ? h('div', { className: 'dsh-op-versionNew' },
