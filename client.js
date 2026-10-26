@@ -253,8 +253,10 @@ window.__ModuleLoader__.load({
         'auto.warn.body': '启动后 AI 会自动往这个会话里发送消息：读对话 → 写下一步提示词 → 发给助手，一轮接一轮。它会消耗模型额度，也可能做出你没想到的改动。随时可以中断或结束循环。',
         'auto.warn.cancel': '再想想',
         'auto.warn.confirm': '确认启动',
-        'auto.interrupt': '中断',
-        'auto.stop': '结束循环',
+        'auto.interrupt': '跳过这一轮',
+        'auto.interrupt.hint': '取消助手正在做的这一轮，循环继续，它会重新判断下一步。',
+        'auto.stop.hint': '整个自动驾驶停下。之后可以从这里继续。',
+        'auto.stop': '停止自动',
         'auto.running': '运行中',
         'auto.context': '上下文',
         'auto.context.messages': '条消息',
@@ -272,7 +274,7 @@ window.__ModuleLoader__.load({
         'auto.phase.done': '已完成',
         'auto.phase.error': '出错',
         'auto.phase.stopped': '意外停止',
-        'auto.phase.interrupted': '已中断',
+        'auto.phase.interrupted': '已停止',
         'auto.waiting': '等待助手完成上一轮',
         'auto.waitingOn': '等待助手完成：',
         'auto.seconds': ' 秒',
@@ -285,7 +287,7 @@ window.__ModuleLoader__.load({
         'settings.explore.rounds': '轮',
         'settings.rewriteBudget': '改写预算',
         'settings.rewriteBudget.hint': '模型写答案这一步最多等多久。给得太短，长草稿会来不及。',
-        'auto.stop.interrupted': '你手动停下了，可以继续。',
+        'auto.stop.interrupted': '你点了停止，可以从这里继续。',
         'auto.phase.hint': '点一下看详情',
         'auto.restart': '重新开始',
         'auto.clear': '清除状态',
@@ -410,8 +412,10 @@ window.__ModuleLoader__.load({
         'auto.warn.body': 'The AI will send messages into this conversation by itself: read the history, write the next prompt, send it, round after round. It spends model quota and may change things you did not expect. You can interrupt or end the loop at any time.',
         'auto.warn.cancel': 'Not now',
         'auto.warn.confirm': 'Start',
-        'auto.interrupt': 'Interrupt',
-        'auto.stop': 'End loop',
+        'auto.interrupt': 'Skip this round',
+        'auto.interrupt.hint': 'Cancel the turn the assistant is running. The loop stays alive and re-plans the next step.',
+        'auto.stop.hint': 'End the autopilot. You can continue from here afterwards.',
+        'auto.stop': 'Stop autopilot',
         'auto.running': 'Running',
         'auto.context': 'Context',
         'auto.context.messages': 'messages',
@@ -429,7 +433,7 @@ window.__ModuleLoader__.load({
         'auto.phase.done': 'Done',
         'auto.phase.error': 'Failed',
         'auto.phase.stopped': 'Stopped',
-        'auto.phase.interrupted': 'Interrupted',
+        'auto.phase.interrupted': 'Stopped',
         'auto.waiting': 'Waiting for the assistant to finish its turn',
         'auto.waitingOn': 'Waiting for the assistant: ',
         'auto.seconds': 's',
@@ -442,7 +446,7 @@ window.__ModuleLoader__.load({
         'settings.explore.rounds': 'rounds',
         'settings.rewriteBudget': 'Rewrite budget',
         'settings.rewriteBudget.hint': 'How long the model may take to write the answer. Too short and a long draft will not finish.',
-        'auto.stop.interrupted': 'You stopped it. You can continue.',
+        'auto.stop.interrupted': 'You stopped it. Continue picks up here.',
         'auto.phase.hint': 'Click for details',
         'auto.restart': 'Run again',
         'auto.clear': 'Clear status',
@@ -1524,8 +1528,21 @@ window.__ModuleLoader__.load({
                   h('div', { className: 'dsh-op-inline' },
                     autoPhase === 'running'
                       ? h(React.Fragment, null,
-                        h('button', { type: 'button', className: 'dsh-op-btn', onClick: interruptPilot }, t('auto.interrupt')),
-                        h('button', { type: 'button', className: 'dsh-op-btn dsh-op-btn--danger', onClick: stopPilot }, t('auto.stop')))
+                        // The labels alone cannot carry the difference: one cancels a
+                        // single assistant turn and lets the loop re-plan, the other
+                        // ends the autopilot. The title says which.
+                        h('button', {
+                          type: 'button',
+                          className: 'dsh-op-btn',
+                          title: t('auto.interrupt.hint'),
+                          onClick: interruptPilot,
+                        }, t('auto.interrupt')),
+                        h('button', {
+                          type: 'button',
+                          className: 'dsh-op-btn dsh-op-btn--danger',
+                          title: t('auto.stop.hint'),
+                          onClick: stopPilot,
+                        }, t('auto.stop')))
                       // An interrupted run resumes where it stopped, keeping the
                       // rounds it already spent; only an interrupted-to-completion
                       // (done or error) needs a fresh start.
