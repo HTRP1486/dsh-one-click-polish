@@ -289,6 +289,7 @@ window.__ModuleLoader__.load({
         'version.unknown': '查不到最新版本',
         'version.how': '怎么更新',
         'version.recheck': '重新检查',
+        'version.updateHint': '卸载后按包名重装即可更新（dsh 不为第三方插件提供更新按钮）',
         'settings.explore': '检索预算',
         'settings.explore.hint': '标准/深度润色时会先查资料。这是查资料总共能用多久、最多查几轮。查完后再改写，两者互不占用。',
         'settings.explore.unit': '秒',
@@ -455,6 +456,7 @@ window.__ModuleLoader__.load({
         'version.unknown': 'Cannot reach npm',
         'version.how': 'How to update',
         'version.recheck': 'Check again',
+        'version.updateHint': 'Uninstall and install by package name to update (dsh offers no update button for third-party plugins)',
         'settings.explore': 'Lookup budget',
         'settings.explore.hint': 'A standard or deep polish looks things up first. This is how long that may take in total, and how many rounds it may spend. The rewrite runs separately with its own budget.',
         'settings.explore.unit': 's',
@@ -591,6 +593,10 @@ window.__ModuleLoader__.load({
 .dsh-op-versionNew{display:flex;flex-wrap:wrap;align-items:center;gap:8px;
   font-size:11.5px;color:var(--dsw-alias-state-warn-primary)}
 .dsh-op-versionBad{color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));opacity:.8}
+/* The manual update instruction: present when a newer version exists, quiet enough
+   not to compete with the version numbers themselves. */
+.dsh-op-versionHint{flex:1 1 100%;font-size:11px;line-height:16px;
+  color:var(--dsw-alias-label-secondary);opacity:.85}
 /* The busy-wait line: a live counter, so it is monospaced and does not reflow as
    the seconds tick, and it holds a fixed height so the panel does not jump. */
 .dsh-op-waiting{font-variant-numeric:tabular-nums;min-height:17px}
@@ -2539,7 +2545,11 @@ window.__ModuleLoader__.load({
                         type: 'button',
                         className: 'dsh-op-link',
                         onClick: () => { void checkVersion(true) },
-                      }, t('version.recheck')))
+                      }, t('version.recheck')),
+                      // dsh derives installTarget only from its official catalogue, so a
+                      // third-party plugin has no update button. State the manual step
+                      // rather than leaving the user to wonder where one is.
+                      h('span', { className: 'dsh-op-versionHint' }, t('version.updateHint')))
                     : h('span', { className: 'dsh-op-hint dsh-op-hint--inline' }, t('version.latest')))),
         h('div', { className: 'dsh-op-card' },
           h('div', { className: 'dsh-op-cardTitle' }, t('settings.group.model')),

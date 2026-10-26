@@ -609,6 +609,20 @@ function allowedRoots(ctx, agent) {
 function profileDir() {
   const fromEnv = process.env.DSH_PROFILE_DIR
   if (typeof fromEnv === 'string' && fromEnv !== '') return fromEnv
+
+  // Resolve from where this module actually lives: <profile>/node_modules/<pkg>/.
+  // That anchor stays correct whatever working directory the Host was launched with,
+  // and it is what keeps the run log and the resume checkpoint discoverable after an
+  // uninstall-and-reinstall: those files live in the profile rather than in the
+  // package, so they survive the uninstall and must still be found afterwards.
+  try {
+    const here = dirname(fileURLToPath(import.meta.url))
+    const profile = join(here, '..', '..')
+    if (existsSync(join(profile, 'package.json')) && existsSync(join(profile, 'cordis.patch.yml'))) {
+      return profile
+    }
+  } catch { /* fall through to the working-directory guess */ }
+
   try {
     const cwd = process.cwd()
     if (!existsSync(join(cwd, 'cordis.patch.yml'))) return null
