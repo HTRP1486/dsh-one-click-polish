@@ -1,25 +1,30 @@
-# 一键润色 / 扩写 / 自动驾驶
+# 一键润色 / 扩写 / 自动驾驶 · One-click polish, expand and autopilot for DSH
 
 [![npm](https://img.shields.io/npm/v/dsh-one-click-polish?label=npm)](https://www.npmjs.com/package/dsh-one-click-polish)
 [![license](https://img.shields.io/npm/l/dsh-one-click-polish)](LICENSE)
+[![dsh plugin](https://img.shields.io/badge/dsh-plugin-4a6cf7)](https://github.com/HTRP1486/dsh-one-click-polish)
 
-给 DeepSeek Harness（dsh）桌面端的输入框加一组动作：**润色**、**扩写**、**自动驾驶**。所有模型调用都用**你当前会话正在用的那个模型**，结果直接写回输入框。
+给 **DeepSeek Harness（dsh）** 桌面端的输入框加一组动作：**润色**、**扩写**、**自动驾驶**。所有模型调用都用**你当前会话正在用的那个模型**，结果直接写回输入框。
 
-- 润色：按三档深度重写草稿
-- 扩写：把一句话扩写成能直接开工的需求说明
-- 自动驾驶：让 AI 读对话、写下一步提示词、发给助手，一轮接一轮推进到你设定的目标
+A **DeepSeek Harness (dsh)** plugin that adds polish / expand / autopilot to the composer. It rewrites your draft with the model the session is already switched to, turns a one-line wish into a workable brief, or drives a goal round after round by writing and sending the next prompt itself.
 
-一句安装：
+- 润色 · **Polish**：按三档深度重写草稿（不查 / 查本地 / 查本地+联网）
+- 扩写 · **Expand**：把一句话扩写成能直接开工的需求说明
+- 自动驾驶 · **Autopilot**：让 AI 读对话、写下一步提示词、发给助手，一轮接一轮推进到你设定的目标
+
+一句安装 · Install in one line：
 
 ```
 dsh-one-click-polish
 ```
 
-装好之后，输入框左下角多一排按钮：
+装好之后，输入框左下角多一排按钮 · The composer gains a row of buttons：
 
 ```
 [+ 完全权限]  润色   深度   扩写   自动
 ```
+
+> 关键词 · Keywords：`dsh` `dsh-plugin` `deepseek-harness` `deepseek` `polish` `proofread` `rewrite` `expand` `autopilot` `loop` `composer` `润色` `扩写` `自动驾驶` `智能体`
 
 ---
 

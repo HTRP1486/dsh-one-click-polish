@@ -1,0 +1,126 @@
+{
+  "format": 1,
+  "title": {
+    "en": "HTRP1486 plugins",
+    "zh": "HTRP1486 插件"
+  },
+  "description": {
+    "en": "Plugins for DeepSeek Harness by HTRP1486.",
+    "zh": "HTRP1486 为 DeepSeek Harness 写的插件。"
+  },
+  "metadata": {
+    "categories": {
+      "composer": {
+        "title": {
+          "en": "Composer",
+          "zh": "输入框"
+        }
+      }
+    },
+    "labels": {
+      "polish": {
+        "title": {
+          "en": "Polish",
+          "zh": "润色"
+        }
+      },
+      "autopilot": {
+        "title": {
+          "en": "Autopilot",
+          "zh": "自动驾驶"
+        }
+      }
+    },
+    "sortKeys": {}
+  },
+  "plugins": [
+    {
+      "name": "dsh-one-click-polish",
+      "title": {
+        "en": "One-click polish / expand / autopilot",
+        "zh": "一键润色 / 扩写 / 自动驾驶"
+      },
+      "description": {
+        "en": "Adds polish, expand and autopilot to the composer. Rewrites the draft with the model the session is switched to, turns a one-line wish into a brief, or drives a goal round after round.",
+        "zh": "给输入框加润色、扩写、自动驾驶。用当前会话的模型重写草稿、把一句话扩成需求说明，或让 AI 写下一步提示词并发送、一轮接一轮推进目标。"
+      },
+      "author": "HTRP1486",
+      "homepage": "https://www.npmjs.com/package/dsh-one-click-polish",
+      "repository": {
+        "type": "git",
+        "url": "https://github.com/HTRP1486/dsh-one-click-polish"
+      },
+      "metadata": {
+        "category": "composer",
+        "keywords": [
+          "polish",
+          "proofread",
+          "rewrite",
+          "expand",
+          "autopilot",
+          "composer",
+          "润色",
+          "扩写",
+          "自动驾驶"
+        ],
+        "labels": [
+          "polish",
+          "autopilot"
+        ],
+        "sortKeys": {}
+      },
+      "versions": [
+        {
+          "version": "1.2.4",
+          "publishTimestamp": 1793019523,
+          "source": {
+            "type": "npm"
+          },
+          "engines": {
+            "dsh": ">=0.2.0"
+          }
+        },
+        {
+          "version": "1.2.3",
+          "publishTimestamp": 1793018063,
+          "source": {
+            "type": "npm"
+          },
+          "engines": {
+            "dsh": ">=0.2.0"
+          }
+        },
+        {
+          "version": "1.2.2",
+          "publishTimestamp": 1793016071,
+          "source": {
+            "type": "npm"
+          },
+          "engines": {
+            "dsh": ">=0.2.0"
+          }
+        },
+        {
+          "version": "1.2.1",
+          "publishTimestamp": 1793010660,
+          "source": {
+            "type": "npm"
+          },
+          "engines": {
+            "dsh": ">=0.2.0"
+          }
+        },
+        {
+          "version": "1.2.0",
+          "publishTimestamp": 1793005088,
+          "source": {
+            "type": "npm"
+          },
+          "engines": {
+            "dsh": ">=0.2.0"
+          }
+        }
+      ]
+    }
+  ]
+}
