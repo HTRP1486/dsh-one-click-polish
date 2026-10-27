@@ -63,7 +63,9 @@ dsh-one-click-polish
 dsh plugin --profile <你的 profile 名> install dsh-one-click-polish
 ```
 
-**为什么推荐这个**：npm 上有版本号，dsh 能比对，所以插件列表里会出现「可更新」和「卸载」两个按钮。缺点是更新要走一遍发布流程。
+**为什么推荐这个**：有明确的版本号，插件列表里能看到「卸载」，设置页里能看到「当前版本 / npm 上有新版」。
+
+> ⚠️ dsh 的「更新」按钮只对**官方目录里的 bundle** 生效 —— 它用 `installTarget` 与官方清单比对，第三方插件永远拿不到。所以第三方插件更新一律是「卸载 → 按包名重装」。
 
 ### 方式二：GitHub
 
@@ -89,8 +91,19 @@ github:HTRP1486/dsh-one-click-polish
 
 | 方式 | 做法 |
 | --- | --- |
-| 本地目录 | target 填仓库的**绝对路径**，如 `D:\Documents\dsh-one-click-polish`。改代码即时生效，适合开发 |
+| 本地目录 | target 填仓库的**绝对路径**，如 `C:\code\dsh-one-click-polish`。改代码即时生效，适合开发 |
 | Release 包 | 从 [Releases](https://github.com/HTRP1486/dsh-one-click-polish/releases) 下 `.tgz`，target 填该文件的绝对路径 |
+| **插件市场索引** | 见下方「插件市场」 |
+
+### 插件市场
+
+仓库根目录有一份 `market-index.json`，是 dsh 插件市场的**格式 1 索引**。把它加进市场的索引源，就能在「Discover」里看到这个插件并一键安装：
+
+```
+https://raw.githubusercontent.com/HTRP1486/dsh-one-click-polish/main/market-index.json
+```
+
+加进市场后，插件以中英文标题、描述、分类和关键词列出，点一下即装。
 
 ### 三种方式怎么选
 
@@ -108,9 +121,11 @@ github:HTRP1486/dsh-one-click-polish
 
 | 位置 | 当前 |
 | --- | --- |
-| `package.json` 的 `version` | `1.2.0` |
-| npm 的 `latest` 标签 | `1.2.0` |
-| GitHub 的 tag / Release | `v1.2.0` |
+| `package.json` 的 `version` | `1.2.4` |
+| npm 的 `latest` 标签 | `1.2.4` |
+| GitHub 的 tag / Release | `v1.2.4` |
+
+发版跑 `release.sh`：它会拒绝在版本号不一致、工作区不干净、或 tag 已存在时继续。
 
 ### 装不上时
 
