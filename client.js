@@ -762,7 +762,12 @@ window.__ModuleLoader__.load({
   font-size:13px;line-height:20px;pointer-events:none}
 .dsh-op-toast svg{flex:none;color:var(--dsw-alias-state-success-primary)}
 .dsh-op-status[data-state="dirty"]{color:var(--dsw-alias-state-warn-primary)}
-.dsh-op-job{position:fixed;top:12px;left:12px;z-index:1500;width:300px;box-sizing:border-box;
+/* Top-right, not top-left: the left column is dsh's own sidebar (brand, new
+   session, workspaces, session list) and a 300px panel anchored at left:12px covered
+   its upper half — the progress window hid the navigation it was reporting about.
+   Right of the content column is empty until the thinking window appears, and the
+   two stack cleanly: 12px vs 64px from the same edge. */
+.dsh-op-job{position:fixed;top:12px;right:16px;z-index:1500;width:300px;box-sizing:border-box;
   padding:12px 14px;border-radius:var(--dsw-radius-panel);pointer-events:auto;
   background:var(--dsw-alias-bg-layer-2);border:.5px solid var(--dsw-alias-border-l2);
   --dsw-elevation-stroke-color:var(--dsw-alias-border-l1);
