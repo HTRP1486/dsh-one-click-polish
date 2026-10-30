@@ -272,6 +272,8 @@ window.__ModuleLoader__.load({
         'job.expanding': '扩写中',
         'job.polishing': '润色中',
         'job.label': '润色步骤',
+        'run.waiting': '等待模型响应…',
+        'run.close': '关闭这个过程面板',
         'job.failed': '失败',
         'job.hide': '收起',
         'job.cancel': '取消这次操作',
@@ -445,6 +447,8 @@ window.__ModuleLoader__.load({
         'job.expanding': 'Expanding',
         'job.polishing': 'Polishing',
         'job.label': 'Polish steps',
+        'run.waiting': 'Waiting for the model…',
+        'run.close': 'Close this process panel',
         'job.failed': 'Failed',
         'job.hide': 'Collapse',
         'job.cancel': 'Cancel this run',
@@ -661,6 +665,27 @@ window.__ModuleLoader__.load({
   white-space:nowrap;opacity:.75}
 .dsh-op-stepError{margin-top:6px;font-size:11px;color:var(--dsw-alias-state-error-primary)}
 @media (prefers-reduced-motion:reduce){.dsh-op-stepsSpin{animation:none}}
+/* The one-shot run panel: above the composer, narrower than the result card, and
+   positioned higher so an expand result can appear under it without overlap. */
+.dsh-op-run{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);z-index:1440;
+  width:min(560px,calc(100vw - 64px));max-height:min(240px,34vh);display:flex;flex-direction:column;
+  border-radius:var(--dsw-radius-lg);background:var(--dsw-alias-bg-layer-2);
+  border:.5px solid var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);
+  color:var(--dsw-alias-label-primary);font-size:12px;line-height:17px;overflow:hidden;
+  animation:dsh-op-pop-in .17s cubic-bezier(.22,1,.36,1) both}
+.dsh-op-runHead{display:flex;align-items:center;gap:8px;padding:8px 12px;flex:none;
+  border-bottom:1px solid var(--dsw-alias-border-l1)}
+.dsh-op-runTitle{flex:1;font-size:12.5px;font-weight:600}
+.dsh-op-runBody{flex:1;min-height:0;overflow-y:auto;padding:8px 12px;display:flex;
+  flex-direction:column;gap:6px}
+.dsh-op-runWait{color:var(--dsw-alias-label-secondary);font-size:11.5px}
+.dsh-op-runRow{display:flex;gap:8px;align-items:baseline;
+  color:var(--dsw-alias-label-secondary)}
+.dsh-op-runRow[data-kind="round"]{color:var(--dsw-alias-label-primary)}
+.dsh-op-runTag{flex:none;font-weight:600;color:var(--dsw-alias-brand-primary);font-size:11px}
+.dsh-op-runText{flex:1;min-width:0;white-space:pre-wrap;word-break:break-word;opacity:.92}
+.dsh-op-runErr{margin-top:4px;font-size:11px;color:var(--dsw-alias-state-error-primary)}
+@media (prefers-reduced-motion:reduce){.dsh-op-run{animation:none}}
 .dsh-op-expand{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);z-index:1450;
   width:min(600px,calc(100vw - 64px));max-height:min(460px,60vh);display:flex;flex-direction:column;
   border-radius:var(--dsw-radius-panel);background:var(--dsw-alias-bg-layer-1);
@@ -2018,6 +2043,63 @@ window.__ModuleLoader__.load({
         failed ? h('div', { className: 'dsh-op-stepError' }, String(job.error)) : null)
     }
 
+    // ── run panel: 润色 / 扩写, above the composer ────────────────────────────
+    /**
+     * The process of a one-shot 润色 or 扩写, drawn above the composer.
+     *
+     * It reads the live job trace the Host streams, so the reasoning and every tool
+     * call appear while the request is still running instead of only after it
+     * settles. The autopilot monitor is a separate window at the top right: a loop
+     * outlives the click, a one-shot does not, and putting both in one surface made
+     * two unrelated features look like one.
+     */
+    function RunPanel({ t }) {
+      const job = useJob()
+      const [dismissedId, setDismissedId] = useState(null)
+      const bodyRef = useRef(null)
+      if (job === null) return null
+      if (dismissedId !== null && job.id === dismissedId) return null
+      const trace = Array.isArray(job.trace) ? job.trace.slice(-40) : []
+      const running = job.done !== true
+      const failed = job.error !== null && job.error !== undefined
+      const title = job.mode === 'expand' ? t('job.expanding') : t('job.polishing')
+      // Nothing has streamed yet: a spinner with no rows still tells the user the
+      // request is alive, which is the whole point of showing this early.
+      return h('div', { className: 'dsh-op-run' },
+        h('div', { className: 'dsh-op-runHead' },
+          h('span', { className: 'dsh-op-runTitle' },
+            failed ? t('job.failed') : running ? title : t('job.done')),
+          running ? h('span', { className: 'dsh-op-stepsSpin' }, '⟳') : null,
+          h('button', {
+            type: 'button',
+            className: 'dsh-op-thinkBtn',
+            title: t('run.close'),
+            onClick: () => setDismissedId(job.id),
+          }, '✕')),
+        h('div', { className: 'dsh-op-runBody', ref: bodyRef },
+          trace.length === 0
+            ? h('div', { className: 'dsh-op-runWait' }, t('run.waiting'))
+            : trace.map((entry, index) => {
+              const kind = entry.kind
+              const tag = kind === 'tool'
+                ? (entry.name ?? 'tool')
+                : kind === 'round'
+                  ? t('auto.trace.think')
+                  : t('auto.trace.conclusion')
+              const body = kind === 'tool'
+                ? `${entry.summary ?? ''}${entry.text ? ` — ${entry.text}` : ''}`
+                : (entry.reasoning || entry.text || '')
+              return h('div', {
+                key: String(index),
+                className: 'dsh-op-runRow',
+                'data-kind': kind,
+                'data-live': entry.live === true ? 'true' : 'false',
+              },
+              h('span', { className: 'dsh-op-runTag' }, tag),
+              h('span', { className: 'dsh-op-runText' }, String(body)))
+            }),
+          failed ? h('div', { className: 'dsh-op-runErr' }, String(job.error)) : null))
+    }
     // ── right-hand thinking window ──────────────────────────────────────────
     /**
      * A docked panel on the right showing the driver's reasoning and tool calls
@@ -2911,6 +2993,12 @@ window.__ModuleLoader__.load({
         id: 'one-click-polish-think',
         order: 21,
       }, props => h(ThinkWindow, { ...props, t })))
+      // The one-shot run panel sits above the composer, under the result card.
+      ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+        name: 'shell.overlay',
+        id: 'one-click-polish-run',
+        order: 22,
+      }, props => h(RunPanel, { ...props, t })))
     }
 
     exports.apply = apply
