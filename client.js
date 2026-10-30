@@ -281,6 +281,7 @@ window.__ModuleLoader__.load({
         'run.waiting': '等待模型响应…',
         'run.close': '关闭这个过程面板',
         'run.task.local': '本地检索',
+        'run.task.both': '本地 + 联网检索',
         'run.task.web': '联网搜索',
         'run.task.polish': '润色重写',
         'run.task.expand': '扩写重写',
@@ -465,6 +466,7 @@ window.__ModuleLoader__.load({
         'run.waiting': 'Waiting for the model…',
         'run.close': 'Close this process panel',
         'run.task.local': 'Local lookup',
+        'run.task.both': 'Local + web lookup',
         'run.task.web': 'Web search',
         'run.task.polish': 'Rewrite',
         'run.task.expand': 'Expand',
@@ -2419,16 +2421,20 @@ window.__ModuleLoader__.load({
           //
           // A switch the user turned off draws no row at all. It is not "skipped" —
           // the user decided it, so there is nothing to report, and a row explaining a
-          // decision they made themselves only adds noise.
-          wantsLocal
-            ? rowFor('local', t('run.task.local'), localState, 0, undefined,
-              localState === 'running' ? tail : '')
+          // Both lookups happen inside one explore() call, so they are one row, not
+          // two: drawing 本地检索 and 联网搜索 side by side printed the same reasoning
+          // twice. The label names whichever switches are on.
+          //
+          // A switch the user turned off draws no row at all. It is not "skipped" —
+          // the user decided it, so there is nothing to report.
+          wantsLocal || wantsWeb
+            ? rowFor('lookup',
+              wantsLocal && wantsWeb
+                ? t('run.task.both')
+                : (wantsLocal ? t('run.task.local') : t('run.task.web')),
+              exploreState, 0, undefined, exploreState === 'running' ? tail : '')
             : null,
-          wantsWeb
-            ? rowFor('web', t('run.task.web'), webState, 1, undefined,
-              webState === 'running' ? tail : '')
-            : null,
-          rowFor('rewrite', verb, rewriteState, wantsLocal || wantsWeb ? 2 : 0, undefined,
+          rowFor('rewrite', verb, rewriteState, wantsLocal || wantsWeb ? 1 : 0, undefined,
             rewriteState === 'running' ? tail : ''),
           tool === null
             ? null

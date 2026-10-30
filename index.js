@@ -1129,6 +1129,14 @@ const RESEARCH_NOTE = [
 async function explore(ctx, selection, input, research, job, agent, signal, system = EXPLORE_SYSTEM) {
   const tools = explorerTools(research)
   const roots = allowedRoots(ctx, agent)
+  // Name the real paths. Without them the model reads "DSH 配置目录" in the system
+  // prompt as a literal directory and asks to list it, which fails on a path like
+  // "D:\Documents\DSH 配置目录" and burns a round on nothing.
+  const rootNote = roots.length === 0
+    ? 'Allowed local roots: none this session. Use web_search only.'
+    : ['Allowed local roots (these are the only paths list_dir/read_file/search_content accept):',
+      ...roots.map(root => '- ' + root)].join('\n')
+  const fullSystem = system + '\n\n' + rootNote
   const messages = [{ role: 'user', content: [{ type: 'text', text: input }] }]
   const findings = []
   // The lookup budget and round count come from settings via the job, falling back
@@ -1148,7 +1156,7 @@ async function explore(ctx, selection, input, research, job, agent, signal, syst
       provider: selection.provider,
       model: selection.model,
       messages,
-      system,
+      system: fullSystem,
       tools,
       signal,
     })
