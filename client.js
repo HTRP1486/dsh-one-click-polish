@@ -47,6 +47,17 @@ window.__ModuleLoader__.load({
     /** The in-flight request, so the panel can cancel it. */
     let activeAbort = null
 
+    /**
+     * The conversation the in-flight run belongs to, and whether it was abandoned
+     * because the user switched away.
+     *
+     * Module scope on purpose: the composer slot can rebuild when the conversation
+     * changes, and a per-instance ref would be lost with it — leaving the run alive
+     * and the panel reporting on a chat nobody is looking at.
+     */
+    let activeRunSession = null
+    let activeRunCancelled = false
+
     /** Last geometry written to the log, so the panel reports once per change. */
     let lastBoxStamp = ''
 
@@ -1432,6 +1443,32 @@ window.__ModuleLoader__.load({
         })
       }, [])
 
+      // Switching conversation abandons the run.
+      //
+      // A polish belongs to the draft it was started from, and that draft is gone once
+      // the user moves to another conversation. Letting it finish would rewrite a
+      // composer that is no longer on screen and leave a panel reporting on work in a
+      // chat the user is not looking at. Aborting also frees the request and the poll.
+      useEffect(() => {
+        const owner = activeRunSession
+        if (owner === null) return
+        if (owner === String(sessionId)) return
+        // The conversation changed while this run was in flight.
+        activeRunCancelled = true
+        activeRunSession = null
+        if (activeAbort !== null) {
+          activeAbort.abort()
+          activeAbort = null
+        }
+        busyRef.current = false
+        publishJob(null)
+        publishExpandCard(null)
+        setRunning(null)
+        setPhase('idle')
+        setNotice('')
+        clearTimer()
+      }, [sessionId])
+
       const run = useCallback(async (mode) => {
         report('click', {
           mode,
@@ -1468,6 +1505,10 @@ window.__ModuleLoader__.load({
         // Set when the expand card takes the panel's slot, so `finally` does not
         // publish the job straight back and stack two panels at one anchor.
         let expandTakesOver = false
+        // Which conversation this run belongs to, and whether it was abandoned because
+        // the user switched away. Both are read by the effect below and by the catch.
+        activeRunSession = String(sessionId)
+        activeRunCancelled = false
         const stopWatch = watchJob(requestId)
         const abort = typeof AbortController === 'function' ? new AbortController() : undefined
         activeAbort = abort ?? null
@@ -1534,6 +1575,13 @@ window.__ModuleLoader__.load({
           }), 600)
           flash('done', mode === 'expand' ? t('done.expand') : t('done'), mode)
         } catch (error) {
+          // A run abandoned because the conversation changed is not a failure: the user
+          // moved away, so the button and the panel must simply go quiet instead of
+          // flashing an abort message they did not ask for.
+          if (activeRunCancelled) {
+            report('cancelled', { mode, reason: 'session-switch' })
+            return
+          }
           // eslint-disable-next-line no-console
           console.warn('[one-click-polish]', error)
           report('error', { mode, message: String(error?.message ?? error) })
@@ -1551,7 +1599,13 @@ window.__ModuleLoader__.load({
           // enough to be read. When the expand card already claimed the slot the job
           // is cleared outright — republishing it would draw the process panel on top
           // of the card that replaced it.
-          if (expandTakesOver) {
+          //
+          // An abandoned run stays closed for the same reason: the switch already
+          // cleared the panel, and republishing the job here would bring it back in a
+          // conversation that never started it.
+          if (activeRunCancelled) {
+            publishJob(null)
+          } else if (expandTakesOver) {
             publishJob(null)
           } else if (jobState !== null && jobState.id === requestId) {
             const failed = jobState.error !== null && jobState.error !== undefined
