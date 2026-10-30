@@ -905,7 +905,7 @@ async function runWebSearch(args, signal) {
       }
     }
   } catch (error) {
-    return { text: `联网检索失败：${textOf(error)}`, summary: '联网失败' }
+    return { text: `联网检索失败：${textOf(error)}`, summary: '联网失败', failed: true }
   }
 
   return {
@@ -995,7 +995,7 @@ async function runTool(ctx, agent, roots, call, signal) {
       const lines = found.slice(0, 30).map(item => `${item.kind === 'directory' ? 'd' : '-'} ${item.path}`)
       return { text: lines.join('\n') || '(没有匹配)', summary: `找文件：${query.slice(0, 20)}` }
     } catch (error) {
-      return { text: `文件索引失败：${textOf(error)}`, summary: '索引失败' }
+      return { text: `文件索引失败：${textOf(error)}`, summary: '索引失败', failed: true }
     }
   }
 
@@ -1012,7 +1012,7 @@ async function runTool(ctx, agent, roots, call, signal) {
       if (hidden > 0) lines.push(`(${hidden} 个条目不显示)`)
       return { text: lines.join('\n') || '(空目录)', summary: `列目录：${String(args.path).slice(0, 24)}` }
     } catch (error) {
-      return { text: `列目录失败：${textOf(error)}`, summary: '列目录失败' }
+      return { text: `列目录失败：${textOf(error)}`, summary: '列目录失败', failed: true }
     }
   }
 
@@ -1031,7 +1031,7 @@ async function runTool(ctx, agent, roots, call, signal) {
         summary: `读文件：${String(args.path).slice(0, 24)}`,
       }
     } catch (error) {
-      return { text: `读取失败：${textOf(error)}`, summary: '读文件失败' }
+      return { text: `读取失败：${textOf(error)}`, summary: '读文件失败', failed: true }
     }
   }
 
@@ -1196,7 +1196,13 @@ async function explore(ctx, selection, input, research, job, agent, signal, syst
       })
       markStep(job, 'explore', 'running', `调用 ${call.name}`)
       const result = await runTool(ctx, agent, roots, call, signal)
-      markStep(job, 'explore', 'running', result.summary)
+      // A tool that came back with a refusal is not progress. Leaving the step on
+      // 'running' drew a spinner next to the word 失败, which reads as a hang.
+      // The run continues either way; only the row's state changes.
+      // A single tool refusing is not the step failing: the model may recover on the
+            // next round. Record what happened in the detail column and leave the step
+            // running, so the row never claims a dead end while work continues.
+            markStep(job, 'explore', 'running', result.failed === true ? `(${result.summary})` : result.summary)
       updateLive(job, row, {
         done: true,
         summary: result.summary,
@@ -1342,8 +1348,8 @@ function jobSteps(research) {
   const steps = []
   // Light is a plain rewrite: the model never looks anything up, so no lookup
   // step exists to show.
-  if (research !== 'none') steps.push({ key: 'explore', state: 'pending', detail: '' })
-  steps.push({ key: 'rewrite', state: 'pending', detail: '' })
+  if (research !== 'none') steps.push({ key: 'explore', state: 'pending', label: '检索', detail: '' })
+  steps.push({ key: 'rewrite', state: 'pending', label: '改写', detail: '' })
   return steps
 }
 

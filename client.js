@@ -1898,16 +1898,24 @@ window.__ModuleLoader__.load({
         h('div', { className: 'dsh-op-stepsHead' },
           h('span', { className: 'dsh-op-stepsTitle' }, label),
           finished ? null : h('span', { className: 'dsh-op-stepsSpin' }, '⟳')),
-        job.steps.map((step, index) => h('div', {
-          key: String(index),
-          className: 'dsh-op-stepRow',
-          'data-state': step.state ?? 'running',
-        },
-        h('span', { className: 'dsh-op-stepDot' },
-          step.state === 'done' ? '✓' : step.state === 'error' ? '✕' : '◐'),
-        h('span', { className: 'dsh-op-stepText' }, step.text ?? ''),
-        step.detail === undefined ? null
-          : h('span', { className: 'dsh-op-stepDetail' }, step.detail))),
+        job.steps.map((step, index) => {
+          // A step carries `label` (检索 / 改写), not `text`. Reading the missing
+          // field printed an empty row for every step that had no detail yet.
+          // Once the job is done, whatever never reported a state is finished too,
+          // otherwise the last row keeps a spinner after the work stopped.
+          const state = step.state === 'pending' && finished ? 'done' : (step.state ?? 'pending')
+          return h('div', {
+            key: String(index),
+            className: 'dsh-op-stepRow',
+            'data-state': state,
+          },
+          h('span', { className: 'dsh-op-stepDot' },
+            state === 'done' ? '✓' : state === 'error' ? '✕' : state === 'skipped' ? '–' : '◐'),
+          h('span', { className: 'dsh-op-stepText' }, step.label ?? step.key ?? ''),
+          step.detail === undefined || step.detail === ''
+            ? null
+            : h('span', { className: 'dsh-op-stepDetail' }, step.detail))
+        }),
         failed ? h('div', { className: 'dsh-op-stepError' }, String(job.error)) : null)
     }
     // ── progress panel ──────────────────────────────────────────────────────
