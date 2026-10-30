@@ -1448,6 +1448,57 @@ function markStep(job, key, state, detail) {
   if (detail !== undefined) step.detail = detail
 }
 
+/**
+ * Translate reasoning text for display.
+ *
+ * A thinking model answers in whatever language it reasons in — usually English —
+ * while the person reading the panel writes Chinese. dsh ships a translator with
+ * anonymous routes that need no credentials, so the plugin routes through it rather
+ * than growing a second translation path of its own.
+ *
+ * Failure is not fatal: the caller keeps the original text, so an offline machine
+ * loses the translation and nothing else.
+ */
+async function translateRoute(ctx, req, res) {
+  const body = await readJson(req)
+  const text = typeof body?.text === 'string' ? body.text.trim() : ''
+  const target = typeof body?.targetLanguage === 'string' && body.targetLanguage !== ''
+    ? body.targetLanguage : 'zh'
+  if (text === '') {
+    sendJson(res, 200, { ok: true, text: '' })
+    return
+  }
+  const translator = ctx.get('translator')
+  if (translator === undefined) {
+    sendJson(res, 200, { ok: false, text, error: '没有可用的翻译服务' })
+    return
+  }
+  try {
+    // Try each anonymous route in turn: google is unreachable on some networks and
+    // the plugin cannot know which one this machine can reach, so asking both beats
+    // failing the whole feature on one.
+    const routes = ['bing', 'google']
+    const failures = []
+    for (const route of routes) {
+      try {
+        const spec = translator.resolve({ text, targetLanguage: target, provider: route })
+        const translated = await translator.translate(spec)
+        if (typeof translated === 'string' && translated !== '') {
+          sendJson(res, 200, { ok: true, text: translated })
+          return
+        }
+        failures.push(`${route}: 返回空文本`)
+      } catch (error) {
+        failures.push(`${route}: ${textOf(error)}`)
+      }
+    }
+    throw new Error(failures.join('; '))
+  } catch (error) {
+    // Hand back the original rather than an empty string: a panel with untranslated
+    // text still tells the user what the model was doing.
+    sendJson(res, 200, { ok: false, text, error: textOf(error) })
+  }
+}
 async function progressRoute(req, res) {
   const url = new URL(req.url ?? '/', 'http://localhost')
   const job = jobs.get(url.searchParams.get('id') ?? '')
@@ -2623,6 +2674,16 @@ export function apply(ctx, config) {
     handler: (req, res) => runsRoute(ctx, req, res)
       .catch(error => sendJson(res, 500, { ok: false, error: textOf(error) })),
   }), 'one-click-polish: run log route')
+
+  // Reasoning arrives in whatever language the model thinks in — usually English —
+  // and the panel is read by someone writing Chinese. This route hands the text to
+  // dsh's own translator so the plugin does not grow a second translation path.
+  ctx.effect(() => server.register({
+    kind: 'exact',
+    path: `${PREFIX}/translate`,
+    handler: (req, res) => translateRoute(ctx, req, res)
+      .catch(error => sendJson(res, 500, { ok: false, error: textOf(error) })),
+  }), 'one-click-polish: translate route')
 
   ctx.effect(() => server.register({
     kind: 'exact',

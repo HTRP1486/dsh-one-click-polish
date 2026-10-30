@@ -42,6 +42,7 @@ window.__ModuleLoader__.load({
     const PILOT = ENDPOINT.replace(/\/polish$/, '/autopilot')
     const RUNS = ENDPOINT.replace(/\/polish$/, '/runs')
     const VERSION = ENDPOINT.replace(/\/polish$/, '/version')
+    const TRANSLATE = ENDPOINT.replace(/\/polish$/, '/translate')
 
     /** The in-flight request, so the panel can cancel it. */
     let activeAbort = null
@@ -648,32 +649,32 @@ window.__ModuleLoader__.load({
 /* Expand result card: centred above the composer, wide enough for prose, with
    the body scrolling instead of the card growing past the viewport. */
 
-/* Spinner shared by the run panel. The step-row styles that used to live here went
-   with TurnSteps: the conversation no longer prints the process a second time. */
-.dsh-op-stepsSpin{display:inline-block;animation:dsh-op-spin 1s linear infinite}
-@media (prefers-reduced-motion:reduce){.dsh-op-stepsSpin{animation:none}}
+/* The header no longer spins a icon — the panel body already streams text, so a
+   second moving thing next to the title read as noise. */
 /* The one-shot run panel: above the composer, narrower than the result card, and
    positioned higher so an expand result can appear under it without overlap. */
-/* Tall enough to read a reasoning paragraph without scrolling on every line: a
-   thinking model writes 4-6 sentences per step, and 240px cut them off mid-thought. */
+/* Same surface as the result card: one radius, one fill, one border, so the two panels
+   read as the same object at different stages rather than two design languages. */
 .dsh-op-run{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);z-index:1440;
-  width:min(560px,calc(100vw - 64px));max-height:min(420px,52vh);display:flex;flex-direction:column;
-  border-radius:var(--dsw-radius-lg);background:var(--dsw-alias-bg-layer-2);
-  border:.5px solid var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);
-  color:var(--dsw-alias-label-primary);font-size:12.5px;line-height:18px;overflow:hidden;
+  width:min(600px,calc(100vw - 64px));max-height:min(420px,52vh);display:flex;flex-direction:column;
+  border-radius:var(--dsw-radius-panel);background:var(--dsw-alias-bg-layer-1);
+  border:.5px solid var(--dsw-alias-border-l2);box-shadow:var(--dsw-elevation-prominent);
+  color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;overflow:hidden;
   animation:dsh-op-pop-in .17s cubic-bezier(.22,1,.36,1) both}
-.dsh-op-runHead{display:flex;align-items:center;gap:8px;padding:9px 12px;flex:none;
+.dsh-op-runHead{display:flex;align-items:center;gap:8px;padding:10px 12px;flex:none;
   border-bottom:1px solid var(--dsw-alias-border-l1)}
 .dsh-op-runTitle{flex:1;font-size:13px;font-weight:600}
-.dsh-op-runBody{flex:1;min-height:0;overflow-y:auto;padding:10px 13px;display:flex;
+.dsh-op-runBody{flex:1;min-height:0;overflow-y:auto;padding:12px 14px;display:flex;
   flex-direction:column;gap:9px}
 .dsh-op-runWait{color:var(--dsw-alias-label-secondary);font-size:11.5px}
 /* The tag sits above the text instead of beside it: a reasoning paragraph beside an
-   inline label wrapped into a narrow column and read as a hanging indent. */
+   inline label wrapped into a narrow column and read as a hanging indent. Both parts
+   use label colours — the tag is bold, not tinted, so the panel has no accent of its
+   own. */
 .dsh-op-runRow{display:flex;flex-direction:column;gap:3px;
   color:var(--dsw-alias-label-secondary)}
 .dsh-op-runRow[data-kind="round"]{color:var(--dsw-alias-label-primary)}
-.dsh-op-runTag{font-weight:600;color:var(--dsw-alias-brand-primary);font-size:11px;
+.dsh-op-runTag{font-weight:600;color:var(--dsw-alias-label-secondary);font-size:11px;
   letter-spacing:.02em}
 .dsh-op-runText{white-space:pre-wrap;word-break:break-word;opacity:.92}
 .dsh-op-runErr{margin-top:4px;font-size:11px;color:var(--dsw-alias-state-error-primary)}
@@ -2009,19 +2010,53 @@ window.__ModuleLoader__.load({
       const job = useJob()
       const [dismissedId, setDismissedId] = useState(null)
       const bodyRef = useRef(null)
+      // Translated reasoning, keyed by the source text. A streaming row rewrites its
+      // text on every delta, so translating each version would hammer the service;
+      // only settled rows (or the newest live text, once it stops changing) are sent.
+      const [translated, setTranslated] = useState({})
+      const askedRef = useRef(new Set())
       if (job === null) return null
       if (dismissedId !== null && job.id === dismissedId) return null
       const trace = Array.isArray(job.trace) ? job.trace.slice(-40) : []
       const running = job.done !== true
       const failed = job.error !== null && job.error !== undefined
       const title = job.mode === 'expand' ? t('job.expanding') : t('job.polishing')
-      // Nothing has streamed yet: a spinner with no rows still tells the user the
-      // request is alive, which is the whole point of showing this early.
+
+      // Ask for a translation once the row has settled. A live row keeps changing, so
+      // it is skipped until `live` clears; that keeps one request per finished thought
+      // instead of one per token.
+      useEffect(() => {
+        let cancelled = false
+        const pending = trace.filter(entry => entry.live !== true)
+          .map(entry => (entry.reasoning || entry.text || '').trim())
+          .filter(text => text !== '' && !askedRef.current.has(text) && !/[\u4e00-\u9fa5]/u.test(text))
+        if (pending.length === 0) return undefined
+        void (async () => {
+          for (const text of pending) {
+            askedRef.current.add(text)
+            try {
+              const response = await fetch(TRANSLATE, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ text, targetLanguage: 'zh' }),
+              })
+              const payload = await response.json()
+              if (cancelled) return
+              // `ok:false` still carries the original text, so the row shows it
+              // untranslated rather than blank.
+              if (typeof payload?.text === 'string' && payload.text !== '') {
+                setTranslated(previous => ({ ...previous, [text]: payload.text }))
+              }
+            } catch { /* offline: keep the original */ }
+          }
+        })()
+        return () => { cancelled = true }
+      }, [trace.length, running])
+
       return h('div', { className: 'dsh-op-run' },
         h('div', { className: 'dsh-op-runHead' },
           h('span', { className: 'dsh-op-runTitle' },
             failed ? t('job.failed') : running ? title : t('job.done')),
-          running ? h('span', { className: 'dsh-op-stepsSpin' }, '⟳') : null,
           h('button', {
             type: 'button',
             className: 'dsh-op-thinkBtn',
@@ -2038,9 +2073,12 @@ window.__ModuleLoader__.load({
                 : kind === 'round'
                   ? t('auto.trace.think')
                   : t('auto.trace.conclusion')
-              const body = kind === 'tool'
+              const raw = kind === 'tool'
                 ? `${entry.summary ?? ''}${entry.text ? ` — ${entry.text}` : ''}`
                 : (entry.reasoning || entry.text || '')
+              // Tool summaries are already Chinese (they come from this plugin), so
+              // only the model's own reasoning is translated.
+              const body = kind === 'tool' ? raw : (translated[raw.trim()] ?? raw)
               return h('div', {
                 key: String(index),
                 className: 'dsh-op-runRow',
