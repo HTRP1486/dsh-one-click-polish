@@ -672,7 +672,7 @@ window.__ModuleLoader__.load({
 /* Inline style supplies left/width from the measured composer; max-width is the guard
    that keeps a bad measurement from spanning the whole window again. */
 .dsh-op-run{position:fixed;left:0;right:0;margin:0 auto;bottom:120px;z-index:1440;
-  width:min(600px,calc(100vw - 64px));max-width:min(1120px,calc(100vw - 480px));
+  width:min(600px,calc(100vw - 64px));max-width:600px;
   max-height:min(380px,50vh);display:flex;flex-direction:column;
   border-radius:var(--dsw-radius-lg);background:var(--dsw-alias-bg-layer-2);
   border:.5px solid var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);
@@ -737,7 +737,7 @@ window.__ModuleLoader__.load({
    language either way. Centred with auto margins rather than translateX so the grow
    animation can own the transform without fighting the anchor. */
 .dsh-op-expand{position:fixed;left:0;right:0;margin:0 auto;bottom:120px;z-index:1450;
-  width:min(600px,calc(100vw - 64px));max-width:min(1120px,calc(100vw - 480px));
+  width:min(600px,calc(100vw - 64px));max-width:600px;
   max-height:min(460px,60vh);display:flex;flex-direction:column;
   border-radius:var(--dsw-radius-panel);background:var(--dsw-alias-bg-layer-1);
   border:.5px solid var(--dsw-alias-border-l2);box-shadow:var(--dsw-elevation-prominent);
@@ -2050,16 +2050,21 @@ window.__ModuleLoader__.load({
       // spend a whole band on one word.
       const headed = rows.length > 0 && rows[0].kind === 'heading' ? rows[0].text : null
       const rest = headed === null ? rows : rows.slice(1)
-      // Same width and left edge as the composer, one gap above it, so the result
-      // reads as the composer expanded rather than a dialog that happened to appear.
+      // Narrower than the composer and centred inside it, rather than matching its
+      // full width: a brief is a card that sits over the conversation, and matching
+      // the composer edge to edge made it read as a second input box. Centring inside
+      // the composer keeps it belonging to the same column without claiming its width.
       const frame = box === null
         ? undefined
-        : {
-          left: box.left + 'px',
-          width: box.width + 'px',
-          bottom: box.bottom + 12 + 'px',
-          transform: 'none',
-        }
+        : (() => {
+          const width = Math.min(600, Math.round(box.width * 0.72))
+          return {
+            left: Math.round(box.left + (box.width - width) / 2) + 'px',
+            width: width + 'px',
+            bottom: box.bottom + 12 + 'px',
+            transform: 'none',
+          }
+        })()
       return h('div', { className: 'dsh-op-expand', style: frame },
         h('div', { className: 'dsh-op-expandHead' },
           h('span', { className: 'dsh-op-expandTitle' }, headed ?? t('expand.card.title')),
@@ -2312,18 +2317,22 @@ window.__ModuleLoader__.load({
         streamNode)
       }
 
-      // Anchored on the composer's own rect, so the panel is exactly as wide as the
-      // composer and sits one gap above it. Before the composer is measured there is
-      // nothing to line up with, so the first frame uses the old centred fallback and
-      // the next frame snaps into place.
+      // Narrower than the composer and centred inside it. Matching the composer edge
+      // to edge made the panel 1200px wide on a wide window and read as a second input
+      // box; a panel that reports on the composer should sit inside that column, not
+      // reproduce it. The 0.72 factor keeps a wide margin on both sides at any
+      // width, and 600px caps it so it never becomes a banner on a huge screen.
       const frame = box === null
         ? undefined
-        : {
-          left: box.left + 'px',
-          width: box.width + 'px',
-          bottom: box.bottom + 12 + 'px',
-          transform: 'none',
-        }
+        : (() => {
+          const width = Math.min(600, Math.round(box.width * 0.72))
+          return {
+            left: Math.round(box.left + (box.width - width) / 2) + 'px',
+            width: width + 'px',
+            bottom: box.bottom + 12 + 'px',
+            transform: 'none',
+          }
+        })()
 
       return h('div', { className: 'dsh-op-run', style: frame },
         h('div', { className: 'dsh-op-runHead' },
