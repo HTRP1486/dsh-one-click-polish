@@ -2065,16 +2065,13 @@ window.__ModuleLoader__.load({
         let left = Math.round(left0 + (available - width) / 2)
         const viewport = typeof window.innerWidth === 'number' ? window.innerWidth : 0
         if (viewport > 0) left = Math.max(8, Math.min(left, viewport - width - 8))
-        // box.bottom already measures from the window bottom to the composer's top, so
-        // only a small gap is added. Adding the composer's height on top of that
-        // pushed the card up into the conversation, where it looked like it had
-        // vanished behind the chat.
-        const safeBottom = Math.max(80, Math.min(bottom + 8,
-          (typeof window.innerHeight === 'number' ? window.innerHeight : 900) - 80))
+        // Only a gap is added: box.bottom already measures from the window bottom to
+        // the composer's top. No upper clamp — clamping to the window height parked the
+        // card at the top whenever the measurement drifted.
         return {
           left: left + 'px',
           width: width + 'px',
-          bottom: safeBottom + 'px',
+          bottom: Math.max(0, bottom + 8) + 'px',
           transform: 'none',
         }
       })()
@@ -2136,11 +2133,19 @@ window.__ModuleLoader__.load({
             ?? document.querySelector('[class*="dsh-op-btn"]')
           if (anchor === null) return null
 
+          // A toolbar that is scrolled out, hidden, or mid-unmount reports all zeros.
+          // Climbing from there walks ancestors that are equally meaningless, and the
+          // panel ends up parked at the top of the window — which is exactly what
+          // happened. Require a real rect before measuring anything.
+          const seed = anchor.getBoundingClientRect()
+          if (seed.width <= 0 || seed.height <= 0) return null
+          if (seed.top < 0 || (typeof window.innerHeight === 'number' && seed.top > window.innerHeight)) return null
+
           // Step 1: the input card. Climb while the parent stays within 8% of the
           // child's width — padding and border only — and stop at the first ancestor
           // wider than that, which is the column.
           let current = anchor
-          let card = anchor.getBoundingClientRect()
+          let card = seed
           for (let depth = 0; depth < 12; depth += 1) {
             const parent = current.parentElement
             if (parent === null) break
@@ -2186,6 +2191,13 @@ window.__ModuleLoader__.load({
           const bottom = Number.isFinite(rect.bottom) ? Math.round(rect.bottom) : null
           const height = Number.isFinite(rect.height) ? Math.round(rect.height) : 0
           if (left === null || width === null || bottom === null || width <= 0) return
+          // Sanity band, not just finiteness: the interval re-measures while a job runs,
+          // and a frame where the composer is mid-transition (or scrolled out of the
+          // virtual list) can report a position far from the real one. Keeping the last
+          // good box beats following a single bad sample to the top of the screen.
+          const vh = typeof window.innerHeight === 'number' ? window.innerHeight : 0
+          if (vh > 0 && (bottom < vh * 0.05 || bottom > vh * 0.95)) return
+          if (vh > 0 && (left < -40 || left > (typeof window.innerWidth === 'number' ? window.innerWidth : 0))) return
           const next = { left, width, bottom, height }
           setBox(previous => (previous !== null
             && previous.left === next.left
@@ -2363,17 +2375,14 @@ window.__ModuleLoader__.load({
         let left = Math.round(left0 + (available - width) / 2)
         const viewport = typeof window.innerWidth === 'number' ? window.innerWidth : 0
         if (viewport > 0) left = Math.max(8, Math.min(left, viewport - width - 8))
-        // box.bottom already runs from the window bottom to the composer's top, so the
-        // panel needs a small gap and nothing more. Adding the composer's height again
-        // lifted the panel into the conversation, where it hid behind the chat and
-        // looked like it had disappeared.
-        const safeBottom = Math.max(80,
-          Math.min(bottom + 8,
-            (typeof window.innerHeight === 'number' ? window.innerHeight : 900) - 80))
+        // Only a gap is added: box.bottom already runs from the window bottom to the
+        // composer's top edge. No upper clamp — clamping it to the window height put
+        // the panel at the top of the screen whenever the measurement drifted, which is
+        // worse than trusting the number.
         return {
           left: left + 'px',
           width: width + 'px',
-          bottom: safeBottom + 'px',
+          bottom: Math.max(0, bottom + 8) + 'px',
           transform: 'none',
         }
       })()
