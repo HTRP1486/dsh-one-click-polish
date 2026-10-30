@@ -47,6 +47,9 @@ window.__ModuleLoader__.load({
     /** The in-flight request, so the panel can cancel it. */
     let activeAbort = null
 
+    /** Last geometry written to the log, so the panel reports once per change. */
+    let lastBoxStamp = ''
+
     /**
      * Report one step to the Host's in-memory log.
      *
@@ -686,9 +689,12 @@ window.__ModuleLoader__.load({
    fallback. Centred with margins so the grow animation can own the transform. */
 /* Inline style supplies left/width from the measured composer; max-width is the guard
    that keeps a bad measurement from spanning the whole window again. */
+/* Fixed height, not max-height: the panel appears and stays the same size whether it
+   holds one row or three, so its top edge does not jump while the run progresses.
+   Width is capped lower than before — 480px reads as a card, 600 read as a slab. */
 .dsh-op-run{position:fixed;left:0;right:0;margin:0 auto;bottom:120px;z-index:1440;
-  width:min(600px,calc(100vw - 64px));max-width:600px;
-  max-height:min(380px,50vh);display:flex;flex-direction:column;
+  width:min(480px,calc(100vw - 64px));max-width:480px;
+  height:172px;display:flex;flex-direction:column;
   border-radius:var(--dsw-radius-lg);background:var(--dsw-alias-bg-layer-2);
   border:.5px solid var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);
   color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;overflow:hidden;
@@ -2070,10 +2076,10 @@ window.__ModuleLoader__.load({
         const bottom = Number(box.bottom)
         if (!Number.isFinite(available) || available <= 0) return undefined
         if (!Number.isFinite(left0) || !Number.isFinite(bottom)) return undefined
-        const width = Math.min(600, Math.round(available * 0.72))
-        let left = Math.round(left0 + (available - width) / 2)
-        const viewport = typeof window.innerWidth === 'number' ? window.innerWidth : 0
-        if (viewport > 0) left = Math.max(8, Math.min(left, viewport - width - 8))
+        // Same centring arithmetic as the run panel, slightly wider because a brief has
+        // two columns of text to fit.
+        const width = Math.min(540, Math.max(360, Math.round(available * 0.7)))
+        const left = Math.round(left0 + (available - width) / 2)
         // Only a gap is added: box.bottom already measures from the window bottom to
         // the composer's top. No upper clamp — clamping to the window height parked the
         // card at the top whenever the measurement drifted.
@@ -2143,16 +2149,22 @@ window.__ModuleLoader__.load({
           if (anchor === null) return null
 
           // A toolbar that is scrolled out, hidden, or mid-unmount reports all zeros.
-          // Climbing from there walks ancestors that are equally meaningless, and the
-          // panel ends up parked at the top of the window — which is exactly what
-          // happened. Require a real rect before measuring anything.
+          // Require a real rect before measuring anything.
           const seed = anchor.getBoundingClientRect()
           if (seed.width <= 0 || seed.height <= 0) return null
           if (seed.top < 0 || (typeof window.innerHeight === 'number' && seed.top > window.innerHeight)) return null
 
-          // Step 1: the input card. Climb while the parent stays within 8% of the
-          // child's width — padding and border only — and stop at the first ancestor
-          // wider than that, which is the column.
+          // The toolbar row is the horizontal reference. It holds this plugin's buttons,
+          // the permission picker and the model label, so it spans the composer's inner
+          // width and its centre is the composer's centre. Measuring it directly beats
+          // guessing at a wrapper: every earlier attempt centred on some ancestor whose
+          // insets were uneven, which is why the panel kept drifting.
+          const row = anchor.parentElement
+          const rowRect = row === null ? seed : row.getBoundingClientRect()
+          const reference = rowRect.width >= 320 ? rowRect : seed
+
+          // Vertical anchor: the composer card, found by climbing while the width only
+          // grows by padding. The card's top edge is where the panel sits above.
           let current = anchor
           let card = seed
           for (let depth = 0; depth < 12; depth += 1) {
@@ -2165,27 +2177,11 @@ window.__ModuleLoader__.load({
             card = rect
           }
 
-          // Step 2: the conversation column, which is what the panel centres on. The
-          // card itself is inset inside the column; centring on the card drifts right
-          // whenever the column is wider on one side, which is what put the panel off
-          // centre. The column is the nearest ancestor that is tall (holds the chat)
-          // and wider than the card.
-          let column = null
-          let node = current.parentElement
-          for (let depth = 0; depth < 6 && node !== null; depth += 1) {
-            const rect = node.getBoundingClientRect()
-            if (rect.height > 260 && rect.width >= card.width) { column = rect; break }
-            node = node.parentElement
-          }
-
-          // Horizontal from the column (so centring matches the conversation), vertical
-          // from the card (so the panel hugs the input, not the whole column).
           return {
-            left: column === null ? card.left : column.left,
-            width: column === null ? card.width : column.width,
+            // Centre of the toolbar row, and its width as the available span.
+            left: Math.round(reference.left),
+            width: Math.round(reference.width),
             bottom: Math.round(window.innerHeight - card.top),
-            // The card's own height, so the panel clears the input instead of
-            // overlapping it. Without this the panel sat behind the composer.
             height: Math.round(card.height),
           }
         }
@@ -2395,15 +2391,23 @@ window.__ModuleLoader__.load({
         const bottom = Number(box.bottom)
         if (!Number.isFinite(available) || available <= 0) return undefined
         if (!Number.isFinite(left0) || !Number.isFinite(bottom)) return undefined
-        // Cap first, then centre the capped width inside the available span.
-        const width = Math.min(600, Math.round(available * 0.72))
-        let left = Math.round(left0 + (available - width) / 2)
-        const viewport = typeof window.innerWidth === 'number' ? window.innerWidth : 0
-        if (viewport > 0) left = Math.max(8, Math.min(left, viewport - width - 8))
-        // Only a gap is added: box.bottom already runs from the window bottom to the
-        // composer's top edge. No upper clamp — clamping it to the window height put
-        // the panel at the top of the screen whenever the measurement drifted, which is
-        // worse than trusting the number.
+        // The span is the toolbar row, whose centre is the composer's centre, so the
+        // panel is centred by arithmetic rather than by CSS margins.
+        const width = Math.min(480, Math.max(320, Math.round(available * 0.62)))
+        const left = Math.round(left0 + (available - width) / 2)
+        // Recorded when the numbers change, not per render: this runs on every frame
+        // of a live run, and an unconditional log would flood the file.
+        const stamp = `${left0}:${available}:${bottom}`
+        if (lastBoxStamp !== stamp) {
+          lastBoxStamp = stamp
+          report('panel-box', {
+            measuredLeft: left0,
+            measuredWidth: available,
+            panelLeft: left,
+            panelWidth: width,
+            bottom,
+          })
+        }
         return {
           left: left + 'px',
           width: width + 'px',
