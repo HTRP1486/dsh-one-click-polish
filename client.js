@@ -680,8 +680,19 @@ window.__ModuleLoader__.load({
   flex-direction:column;gap:2px}
 /* One row per task. The dot carries the state so the eye can run down the three
    rows and see where the work is without reading them. */
-.dsh-op-task{display:flex;align-items:baseline;gap:8px;padding:3px 0;
-  color:var(--dsw-alias-label-secondary);font-size:12.5px}
+.dsh-op-task{display:flex;flex-direction:column;gap:2px;padding:4px 0;
+  color:var(--dsw-alias-label-secondary);font-size:12.5px;
+  /* Each row settles in on its own beat: the stagger is what makes them read as
+     work starting in sequence rather than a list being pasted on screen. */
+  animation:dsh-op-task-in .34s cubic-bezier(.16,1,.3,1) both}
+.dsh-op-task:nth-child(1){animation-delay:0s}
+.dsh-op-task:nth-child(2){animation-delay:.06s}
+.dsh-op-task:nth-child(3){animation-delay:.12s}
+@keyframes dsh-op-task-in{
+  from{opacity:0;filter:blur(4px);transform:translateY(4px)}
+  to{opacity:1;filter:blur(0);transform:translateY(0)}
+}
+.dsh-op-taskLine{display:flex;align-items:baseline;gap:8px}
 .dsh-op-task[data-state="running"],.dsh-op-task[data-state="done"]{
   color:var(--dsw-alias-label-primary)}
 .dsh-op-task[data-state="error"]{color:var(--dsw-alias-state-error-primary)}
@@ -690,14 +701,13 @@ window.__ModuleLoader__.load({
 .dsh-op-taskText{flex:none}
 .dsh-op-taskDetail{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;opacity:.7;text-align:right}
-/* The streaming thought: two lines, newest at the bottom. The blur-to-clear fade
-   replays on every delta (the element is re-keyed), so new words settle in instead
-   of popping. filter is the only animated property besides opacity, which keeps
-   it on the compositor. */
-.dsh-op-runStream{margin:6px 0 2px;padding:8px 10px;border-radius:var(--dsw-radius-sm);
-  background:var(--dsw-alias-bg-base);border:.5px solid var(--dsw-alias-border-l1)}
-.dsh-op-runText{white-space:pre-wrap;word-break:break-word;
-  color:var(--dsw-alias-label-primary);font-size:12px;line-height:19px;opacity:.92;
+/* The thought rides on the row doing the work, indented under its label. Two lines,
+   never more: the point is to watch the current sentence arrive, not to read a log.
+   The blur-to-clear fade replays on every delta because the node is re-keyed, so new
+   words settle in instead of popping. filter and opacity only, so it stays on the
+   compositor and streaming does not stutter. */
+.dsh-op-taskStream{padding:2px 0 0 21px;white-space:pre-wrap;word-break:break-word;
+  color:var(--dsw-alias-label-secondary);font-size:11.5px;line-height:18px;
   animation:dsh-op-stream-in .42s cubic-bezier(.16,1,.3,1) both}
 @keyframes dsh-op-stream-in{
   from{opacity:0;filter:blur(4px);transform:translateY(3px)}
@@ -713,7 +723,9 @@ window.__ModuleLoader__.load({
 .dsh-op-runErr{margin-top:6px;font-size:11px;color:var(--dsw-alias-state-error-primary)}
 @media (prefers-reduced-motion:reduce){
   .dsh-op-run{animation:none}
-  .dsh-op-runText{animation:none;filter:none}
+  .dsh-op-task{animation:none}
+  .dsh-op-taskStream{animation:none;filter:none}
+  .dsh-op-expandRow{animation:none}
 }
 .dsh-op-expand{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);z-index:1450;
   width:min(600px,calc(100vw - 64px));max-height:min(460px,60vh);display:flex;flex-direction:column;
@@ -731,7 +743,20 @@ window.__ModuleLoader__.load({
 .dsh-op-expandBody{flex:1;min-height:0;overflow-y:auto;padding:14px 16px;
   word-break:break-word;user-select:text}
 .dsh-op-expandRow{display:grid;grid-template-columns:88px 1fr;gap:12px;
-  align-items:baseline;padding:5px 0}
+  align-items:baseline;padding:5px 0;
+  /* The brief settles line by line, the way the reference does: first row crisp while
+     the next is still blurred. The stagger is on the index, so a longer brief builds
+     in the same rhythm rather than all at once. */
+  animation:dsh-op-expand-in .4s cubic-bezier(.16,1,.3,1) both}
+.dsh-op-expandRow:nth-child(1){animation-delay:.02s}
+.dsh-op-expandRow:nth-child(2){animation-delay:.1s}
+.dsh-op-expandRow:nth-child(3){animation-delay:.18s}
+.dsh-op-expandRow:nth-child(4){animation-delay:.26s}
+.dsh-op-expandRow:nth-child(n+5){animation-delay:.32s}
+@keyframes dsh-op-expand-in{
+  from{opacity:0;filter:blur(5px);transform:translateY(5px)}
+  to{opacity:1;filter:blur(0);transform:translateY(0)}
+}
 .dsh-op-expandLabel{color:var(--dsw-alias-label-secondary);font-size:12px;
   letter-spacing:.02em}
 .dsh-op-expandValue{color:var(--dsw-alias-label-primary);white-space:pre-wrap}
@@ -2118,17 +2143,16 @@ window.__ModuleLoader__.load({
       const localState = wantsLocal ? exploreState : 'skipped'
       const webState = wantsWeb ? exploreState : 'skipped'
 
-      // The newest settled or live reasoning, two lines at most. Showing the whole
-      // trace turned the panel into a wall of text that scrolled away from the
-      // sentence being written; the point is to watch the current thought arrive.
+      // The newest settled or live reasoning. Showing the whole trace turned the
+      // panel into a wall of text that scrolled away from the sentence being written.
       const thoughts = trace
         .filter(entry => entry.kind === 'round')
         .map(entry => (entry.reasoning || entry.text || '').trim())
         .filter(text => text !== '')
       const newest = thoughts.length === 0 ? '' : thoughts[thoughts.length - 1]
       const shown = translated[newest] ?? newest
-      // Two lines of text, measured in characters: a live row is one sentence and a
-      // settled one is a paragraph, so the tail is what the reader wants.
+      // A live row is one long sentence that grows; the tail is what the reader wants
+      // to watch arrive. Two lines, never more.
       const lines = shown.split('\n').filter(line => line.trim() !== '')
       const tail = lines.slice(-2).join('\n')
 
@@ -2136,19 +2160,42 @@ window.__ModuleLoader__.load({
       const tools = trace.filter(entry => entry.kind === 'tool')
       const tool = tools.length === 0 ? null : tools[tools.length - 1]
 
-      const rowFor = (id, label, state, detail) => h('div', {
-        key: id,
-        className: 'dsh-op-task',
-        'data-state': state,
-      },
-      h('span', { className: 'dsh-op-taskDot' },
-        state === 'done' ? '✓'
-          : state === 'error' ? '✕'
-            : state === 'running' ? '◐'
-              : state === 'skipped' ? '–' : '○'),
-      h('span', { className: 'dsh-op-taskText' }, label),
-      detail === undefined || detail === '' ? null
-        : h('span', { className: 'dsh-op-taskDetail' }, detail))
+      // Each task is one line that settles in on its own beat: settled rows blur to
+      // clear, the active one keeps its own stream underneath. Staggering by index
+      // makes the three land in sequence instead of all at once, which is what the
+      // reference does and what makes it read as work happening rather than a list
+      // appearing.
+      const rowFor = (id, label, state, index, detail, stream) => {
+        const settled = state === 'done' || state === 'skipped'
+        const active = state === 'running'
+        const children = [
+          h('span', { className: 'dsh-op-taskDot' },
+            state === 'done' ? '✓'
+              : state === 'error' ? '✕'
+                : state === 'running' ? '◐'
+                  : state === 'skipped' ? '–' : '○'),
+          h('span', { className: 'dsh-op-taskText' }, label),
+          detail === undefined || detail === '' ? null
+            : h('span', { className: 'dsh-op-taskDetail' }, detail),
+        ]
+        // A running row carries its thought in the same line, indented under the
+        // label, so the panel stays three rows tall however long the reasoning is.
+        const streamNode = active && stream !== undefined && stream !== ''
+          ? h('span', {
+            // Re-keyed on the text so the blur-to-clear animation replays per delta.
+            key: 'stream-' + stream.slice(-20),
+            className: 'dsh-op-taskStream',
+          }, stream)
+          : null
+        return h('div', {
+          key: id,
+          className: 'dsh-op-task',
+          'data-state': state,
+          'data-settled': settled ? 'true' : 'false',
+        },
+        h('span', { className: 'dsh-op-taskLine' }, ...children),
+        streamNode)
+      }
 
       return h('div', { className: 'dsh-op-run' },
         h('div', { className: 'dsh-op-runHead' },
@@ -2161,19 +2208,18 @@ window.__ModuleLoader__.load({
             onClick: () => setDismissedId(job.id),
           }, '✕')),
         h('div', { className: 'dsh-op-runBody', ref: bodyRef },
-          rowFor('local', t('run.task.local'), localState,
-            localState === 'skipped' ? t('run.skipped') : undefined),
-          rowFor('web', t('run.task.web'), webState,
-            webState === 'skipped' ? t('run.skipped') : undefined),
-          rowFor('rewrite', verb, rewriteState),
-          // The active row's thought, streamed: two lines, newest at the bottom, and
-          // each render re-mounts the text so the fade-and-blur replays as it grows.
-          tail === ''
-            ? null
-            : h('div', { className: 'dsh-op-runStream' },
-              // `key` changes with the text so the animation restarts on every delta
-              // instead of running once and leaving the added words unanimated.
-              h('div', { key: tail.slice(-24), className: 'dsh-op-runText' }, tail)),
+          // The thought rides on the row that is doing the work: lookup rows show the
+          // reasoning while 检索 runs, the rewrite row shows it while 改写 runs. That
+          // keeps the panel three lines tall instead of a list plus a separate text
+          // block that grows.
+          rowFor('local', t('run.task.local'), localState, 0,
+            localState === 'skipped' ? t('run.skipped') : undefined,
+            localState === 'running' ? tail : ''),
+          rowFor('web', t('run.task.web'), webState, 1,
+            webState === 'skipped' ? t('run.skipped') : undefined,
+            webState === 'running' ? tail : ''),
+          rowFor('rewrite', verb, rewriteState, 2, undefined,
+            rewriteState === 'running' ? tail : ''),
           tool === null
             ? null
             : h('div', { className: 'dsh-op-runTool' },
