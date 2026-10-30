@@ -322,8 +322,8 @@ window.__ModuleLoader__.load({
         'version.recheck': '重新检查',
         'version.updateHint': '卸载后按包名重装即可更新（dsh 不为第三方插件提供更新按钮）',
         'expand.card.title': '扩写结果',
-        'expand.card.apply': '写入输入框',
-        'expand.card.discard': '丢弃',
+        'expand.card.close': '关闭',
+        'expand.card.written': '已写回输入框',
         'settings.explore': '检索预算',
         'settings.explore.hint': '标准/深度润色时会先查资料。这是查资料总共能用多久、最多查几轮。查完后再改写，两者互不占用。',
         'settings.explore.unit': '秒',
@@ -495,8 +495,8 @@ window.__ModuleLoader__.load({
         'version.recheck': 'Check again',
         'version.updateHint': 'Uninstall and install by package name to update (dsh offers no update button for third-party plugins)',
         'expand.card.title': 'Expanded brief',
-        'expand.card.apply': 'Put in composer',
-        'expand.card.discard': 'Discard',
+        'expand.card.close': 'Close',
+        'expand.card.written': 'Written to the composer',
         'settings.explore': 'Lookup budget',
         'settings.explore.hint': 'A standard or deep polish looks things up first. This is how long that may take in total, and how many rounds it may spend. The rewrite runs separately with its own budget.',
         'settings.explore.unit': 's',
@@ -666,8 +666,9 @@ window.__ModuleLoader__.load({
 .dsh-op-expandTitle{flex:1;font-size:13px;font-weight:600}
 .dsh-op-expandBody{flex:1;min-height:0;overflow-y:auto;padding:12px;
   white-space:pre-wrap;word-break:break-word;user-select:text}
-.dsh-op-expandFoot{display:flex;align-items:center;gap:8px;padding:10px 12px;flex:none;
+.dsh-op-expandFoot{display:flex;justify-content:flex-end;padding:8px 12px;flex:none;
   border-top:1px solid var(--dsw-alias-border-l1)}
+.dsh-op-expandNote{font-size:11.5px;color:var(--dsw-alias-label-secondary)}
 @media (prefers-reduced-motion:reduce){.dsh-op-expand{animation:none}}
 .dsh-op-versionHint{flex:1 1 100%;font-size:11px;line-height:16px;
   color:var(--dsw-alias-label-secondary);opacity:.85}
@@ -1354,13 +1355,12 @@ window.__ModuleLoader__.load({
             return
           }
           report('setDraft', { mode, len: next.length })
-            // An expansion is several paragraphs; dropping it straight into the
-            // composer hides what it actually wrote. Show it, let the user apply.
-            if (mode === 'expand') {
-              publishExpandCard({ text: next, source, at: Date.now() })
-              flash('done', t('done.expand'), mode)
-              return
-            }
+          // Both verbs write the draft; expanding additionally opens a card, because
+          // the composer shows one line and an expansion is several paragraphs. The
+          // card is a record of what went in, not a gate in front of it.
+          if (mode === 'expand') {
+            publishExpandCard({ text: next, source, at: Date.now() })
+          }
           inputActions.setDraft(next)
           setTimeout(() => report('after', {
             draftLen: typeof draftRef.current === 'string' ? draftRef.current.length : -1,
@@ -1850,38 +1850,30 @@ window.__ModuleLoader__.load({
 
     // ── expand result card ─────────────────────────────────────────────────
     /**
-     * What 扩写 produced, shown before it touches the draft.
+     * The 扩写 result, and nothing to click.
      *
-     * Polishing rewrites one line in place, so overwriting the composer is the whole
-     * point. Expanding turns a wish into several paragraphs, and dropping that into
-     * the composer hides both what it wrote and the fact that it discarded the wish.
-     * The card gives the user a look and an explicit 写入 step.
+     * The draft is written the moment the expansion lands, because that is what the
+     * button promised. The card then stays for a few seconds as a record of what
+     * went in: the composer is one line tall and the expansion is several paragraphs,
+     * so without it the user cannot read what they just asked for. Closing is explicit
+     * rather than a destructive choice, so there are no buttons to get wrong.
      */
-    function ExpandCard({ t, inputActions }) {
+    function ExpandCard({ t }) {
       const card = useExpandCard()
       if (card === null) return null
-      const apply = () => {
-        inputActions.setDraft(card.text)
-        publishExpandCard(null)
-      }
       return h('div', { className: 'dsh-op-expand' },
         h('div', { className: 'dsh-op-expandHead' },
           h('span', { className: 'dsh-op-expandTitle' }, t('expand.card.title')),
           h('button', {
             type: 'button',
             className: 'dsh-op-thinkBtn',
-            title: t('expand.card.discard'),
+            title: t('expand.card.close'),
             onClick: () => publishExpandCard(null),
           }, '✕')),
         h('div', { className: 'dsh-op-expandBody' }, card.text),
         h('div', { className: 'dsh-op-expandFoot' },
-          h('button', { type: 'button', className: 'dsh-op-save', onClick: apply },
-            t('expand.card.apply')),
-          h('button', {
-            type: 'button',
-            className: 'dsh-op-link',
-            onClick: () => publishExpandCard(null),
-          }, t('expand.card.discard'))))
+          h('span', { className: 'dsh-op-expandNote' }, t('expand.card.written')))
+      )
     }
     // ── in-conversation step rows ───────────────────────────────────────────
     /**
@@ -1932,8 +1924,6 @@ window.__ModuleLoader__.load({
         }),
         failed ? h('div', { className: 'dsh-op-stepError' }, String(job.error)) : null)
     }
-    // ── progress panel ──────────────────────────────────────────────────────
-    /**
 
     // ── right-hand thinking window ──────────────────────────────────────────
     /**
