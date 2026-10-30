@@ -2012,15 +2012,18 @@ window.__ModuleLoader__.load({
       const bodyRef = useRef(null)
       // Translated reasoning, keyed by the source text. A streaming row rewrites its
       // text on every delta, so translating each version would hammer the service;
-      // only settled rows (or the newest live text, once it stops changing) are sent.
+      // only settled rows are sent.
       const [translated, setTranslated] = useState({})
       const askedRef = useRef(new Set())
-      if (job === null) return null
-      if (dismissedId !== null && job.id === dismissedId) return null
-      const trace = Array.isArray(job.trace) ? job.trace.slice(-40) : []
-      const running = job.done !== true
-      const failed = job.error !== null && job.error !== undefined
-      const title = job.mode === 'expand' ? t('job.expanding') : t('job.polishing')
+
+      // Every hook runs before any early return: a component that returned early on
+      // the first render and then reached a hook on the next one changes its hook
+      // count, and React unmounts it. That is why the panel vanished once a job
+      // started — the null case used to `return` above this effect.
+      const trace = job === null || Array.isArray(job.trace) === false
+        ? []
+        : job.trace.slice(-40)
+      const running = job !== null && job.done !== true
 
       // Ask for a translation once the row has settled. A live row keeps changing, so
       // it is skipped until `live` clears; that keeps one request per finished thought
@@ -2052,6 +2055,11 @@ window.__ModuleLoader__.load({
         })()
         return () => { cancelled = true }
       }, [trace.length, running])
+
+      if (job === null) return null
+      if (dismissedId !== null && job.id === dismissedId) return null
+      const failed = job.error !== null && job.error !== undefined
+      const title = job.mode === 'expand' ? t('job.expanding') : t('job.polishing')
 
       return h('div', { className: 'dsh-op-run' },
         h('div', { className: 'dsh-op-runHead' },
