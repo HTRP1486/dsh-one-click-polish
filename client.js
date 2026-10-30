@@ -669,8 +669,11 @@ window.__ModuleLoader__.load({
    which is what the composer uses), same radius family, no separate accent. */
 /* Measured composer rect when available (inline style); this is the first-frame
    fallback. Centred with margins so the grow animation can own the transform. */
+/* Inline style supplies left/width from the measured composer; max-width is the guard
+   that keeps a bad measurement from spanning the whole window again. */
 .dsh-op-run{position:fixed;left:0;right:0;margin:0 auto;bottom:120px;z-index:1440;
-  width:min(600px,calc(100vw - 64px));max-height:min(380px,50vh);display:flex;flex-direction:column;
+  width:min(600px,calc(100vw - 64px));max-width:min(1120px,calc(100vw - 480px));
+  max-height:min(380px,50vh);display:flex;flex-direction:column;
   border-radius:var(--dsw-radius-lg);background:var(--dsw-alias-bg-layer-2);
   border:.5px solid var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);
   color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;overflow:hidden;
@@ -734,7 +737,8 @@ window.__ModuleLoader__.load({
    language either way. Centred with auto margins rather than translateX so the grow
    animation can own the transform without fighting the anchor. */
 .dsh-op-expand{position:fixed;left:0;right:0;margin:0 auto;bottom:120px;z-index:1450;
-  width:min(600px,calc(100vw - 64px));max-height:min(460px,60vh);display:flex;flex-direction:column;
+  width:min(600px,calc(100vw - 64px));max-width:min(1120px,calc(100vw - 480px));
+  max-height:min(460px,60vh);display:flex;flex-direction:column;
   border-radius:var(--dsw-radius-panel);background:var(--dsw-alias-bg-layer-1);
   border:.5px solid var(--dsw-alias-border-l2);box-shadow:var(--dsw-elevation-prominent);
   color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;
@@ -2098,18 +2102,50 @@ window.__ModuleLoader__.load({
       const [box, setBox] = useState(null)
       useEffect(() => {
         let timer = null
-        // Several editors can be on screen at once in theory; the visible one with a
-        // toolbar is the composer that raised this panel.
+
+        /**
+         * Find the composer by walking up from this plugin's own toolbar button.
+         *
+         * A class-name search for "composer" matches ancestors too, and the outermost
+         * one spans the sidebar as well — that is what made the panel 1120px wide
+         * inside an 850px composer. The toolbar button is known to be inside the
+         * composer, so the walk starts there and takes the last ancestor that is still
+         * text-sized: once a parent jumps well past its child's width, that parent is
+         * a column, not the input.
+         */
         const find = () => {
-          const nodes = document.querySelectorAll('[class*="composer"]')
+          const anchor = document.querySelector('.dsh-op-group')
+            ?? document.querySelector('[class*="dsh-op-btn"]')
+
+          // Walk up from the toolbar to the input box. Neither width nor height alone
+          // identifies it: the toolbar row is ~28px and only as wide as its buttons,
+          // while the column above the input is a full-height panel. What separates
+          // the input from everything else is its shape — it is wide AND only a few
+          // rows tall — so the walk returns the first ancestor in that band.
+          if (anchor !== null) {
+            let current = anchor
+            for (let depth = 0; depth < 10; depth += 1) {
+              const parent = current.parentElement
+              if (parent === null) break
+              const rect = parent.getBoundingClientRect()
+              // Wide enough to hold a draft, tall enough to be more than the toolbar,
+              // but not so tall that it is the chat column or the whole window.
+              if (rect.width >= 400 && rect.height >= 44 && rect.height <= 260) return rect
+              current = parent
+            }
+          }
+
+          // No toolbar on screen (another session is in front): take the widest
+          // composer-classed box that is still input-shaped.
           let best = null
-          for (const node of nodes) {
+          for (const node of document.querySelectorAll('[class*="composer"]')) {
             const rect = node.getBoundingClientRect()
-            if (rect.width < 240 || rect.height < 40) continue
+            if (rect.height < 44 || rect.height > 260 || rect.width < 240) continue
             if (best === null || rect.width > best.width) best = rect
           }
           return best
         }
+
         const read = () => {
           const rect = find()
           if (rect === null) return
