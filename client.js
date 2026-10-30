@@ -2284,13 +2284,16 @@ window.__ModuleLoader__.load({
       const title = job.mode === 'expand' ? t('job.expanding') : t('job.polishing')
       const verb = job.mode === 'expand' ? t('run.task.expand') : t('run.task.polish')
 
-      // Three rows, always all three, in the order the work happens. The strength
-      // decides which of them actually runs — 轻度 skips the lookup entirely — so a
-      // skipped row says so instead of silently vanishing, which is what made the
-      // panel look like it had lost a step.
-      const research = job.research ?? 'local'
-      const wantsLocal = research !== 'none'
-      const wantsWeb = research === 'web'
+      // Research now arrives as a pair, not a level name. Comparing it to a string
+      // silently matched nothing, so 联网搜索 read as skipped on every run even with
+      // the switch on. Both shapes are accepted here so an older Host keeps working.
+      const research = job.research ?? {}
+      const wantsLocal = typeof research === 'string'
+        ? research !== 'none'
+        : research.local === true
+      const wantsWeb = typeof research === 'string'
+        ? research === 'web'
+        : research.web === true
       // A row is done when the job's own step list says so; the trace tells the
       // active one what to show underneath.
       const steps = Array.isArray(job.steps) ? job.steps : []
@@ -2402,13 +2405,19 @@ window.__ModuleLoader__.load({
           // reasoning while 检索 runs, the rewrite row shows it while 改写 runs. That
           // keeps the panel three lines tall instead of a list plus a separate text
           // block that grows.
-          rowFor('local', t('run.task.local'), localState, 0,
-            localState === 'skipped' ? t('run.skipped') : undefined,
-            localState === 'running' ? tail : ''),
-          rowFor('web', t('run.task.web'), webState, 1,
-            webState === 'skipped' ? t('run.skipped') : undefined,
-            webState === 'running' ? tail : ''),
-          rowFor('rewrite', verb, rewriteState, 2, undefined,
+          //
+          // A switch the user turned off draws no row at all. It is not "skipped" —
+          // the user decided it, so there is nothing to report, and a row explaining a
+          // decision they made themselves only adds noise.
+          wantsLocal
+            ? rowFor('local', t('run.task.local'), localState, 0, undefined,
+              localState === 'running' ? tail : '')
+            : null,
+          wantsWeb
+            ? rowFor('web', t('run.task.web'), webState, 1, undefined,
+              webState === 'running' ? tail : '')
+            : null,
+          rowFor('rewrite', verb, rewriteState, wantsLocal || wantsWeb ? 2 : 0, undefined,
             rewriteState === 'running' ? tail : ''),
           tool === null
             ? null

@@ -1374,14 +1374,15 @@ const JOB_LIMIT = 24
 
 function jobSteps(research) {
   const steps = []
-  // Light is a plain rewrite: the model never looks anything up, so no lookup
-  // step exists to show.
-  // One row per switch that is on. Off switches are not drawn — unlike the old
-  // level ladder there is no "skipped" state to explain, because the user turned
-  // it off themselves.
-  if (research.local === true) steps.push({ key: 'explore', state: 'pending', label: '本地检索', detail: '' })
-  if (research.web === true && research.local !== true) {
-    steps.push({ key: 'explore', state: 'pending', label: '联网搜索', detail: '' })
+  // One lookup step, because both lookups happen inside the same explore() call —
+  // local tools and web_search run in the same round. The label names whichever
+  // switches are on, and the panel relies on its own switch state for the rows so it
+  // does not depend on this string.
+  const wantsLocal = research.local === true
+  const wantsWeb = research.web === true
+  if (wantsLocal || wantsWeb) {
+    const label = wantsLocal && wantsWeb ? '检索' : (wantsLocal ? '本地检索' : '联网搜索')
+    steps.push({ key: 'explore', state: 'pending', label, detail: '' })
   }
   steps.push({ key: 'rewrite', state: 'pending', label: '改写', detail: '' })
   return steps
