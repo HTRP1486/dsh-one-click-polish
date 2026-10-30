@@ -1443,17 +1443,24 @@ window.__ModuleLoader__.load({
         })
       }, [])
 
-      // Switching conversation abandons the run.
+      // Switching conversation abandons a one-shot run — and only a one-shot run.
       //
       // A polish belongs to the draft it was started from, and that draft is gone once
       // the user moves to another conversation. Letting it finish would rewrite a
       // composer that is no longer on screen and leave a panel reporting on work in a
       // chat the user is not looking at. Aborting also frees the request and the poll.
+      //
+      // The autopilot is deliberately out of scope. It is a loop owned by the Host: it
+      // survives the browser, keeps calling the assistant through agent.followup, and
+      // is meant to run while the user works elsewhere. It never touches `activeAbort`
+      // (only `run()` sets that), and this effect touches none of its state — no
+      // `pilot`, no `autoPhase`, no thinking window. Switching away and back must find
+      // it still going.
       useEffect(() => {
         const owner = activeRunSession
         if (owner === null) return
         if (owner === String(sessionId)) return
-        // The conversation changed while this run was in flight.
+        // The conversation changed while this one-shot run was in flight.
         activeRunCancelled = true
         activeRunSession = null
         if (activeAbort !== null) {
