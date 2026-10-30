@@ -213,6 +213,11 @@ window.__ModuleLoader__.load({
               steps: job.steps,
               done: job.done,
               error: job.error,
+              // The two lookup switches travel with the job. The panel decides which
+              // task rows to draw from them, and without this copy it saw an empty
+              // object and drew only the rewrite row — the lookups ran but were never
+              // shown.
+              research: job.research === undefined ? jobState.research : job.research,
               // The trace is what the process panel renders: reasoning deltas and
               // tool calls, with live rows growing in place. Without it here the
               // panel would only see the archived copy after the run settled.
@@ -1436,6 +1441,8 @@ window.__ModuleLoader__.load({
         setLastMode(mode)
         setNotice(mode === 'expand' ? t('working.expand') : t('working'))
         const requestId = `j${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`
+        // No `research` yet: only the Host knows which switches are on. The first poll
+        // fills it in, so this placeholder just avoids drawing a wrong guess.
         publishJob({ id: requestId, mode, steps: [], done: false, error: null, collapsed: false, sessionId: String(sessionId) })
         // 润色 / 扩写 report through their own surfaces: the run panel above the
         // composer, and — for an expansion — the result card. The autopilot's
@@ -2287,13 +2294,17 @@ window.__ModuleLoader__.load({
       // Research now arrives as a pair, not a level name. Comparing it to a string
       // silently matched nothing, so 联网搜索 read as skipped on every run even with
       // the switch on. Both shapes are accepted here so an older Host keeps working.
-      const research = job.research ?? {}
-      const wantsLocal = typeof research === 'string'
-        ? research !== 'none'
-        : research.local === true
-      const wantsWeb = typeof research === 'string'
-        ? research === 'web'
-        : research.web === true
+      //
+      // `undefined` means the first poll has not landed yet, and both switches default
+      // to on — assuming that avoids the panel flickering from one row to three on the
+      // opening frame.
+      const research = job.research
+      const wantsLocal = research === undefined
+        ? true
+        : (typeof research === 'string' ? research !== 'none' : research.local === true)
+      const wantsWeb = research === undefined
+        ? true
+        : (typeof research === 'string' ? research === 'web' : research.web === true)
       // A row is done when the job's own step list says so; the trace tells the
       // active one what to show underneath.
       const steps = Array.isArray(job.steps) ? job.steps : []
