@@ -662,16 +662,31 @@ window.__ModuleLoader__.load({
 .dsh-op-stepError{margin-top:6px;font-size:11px;color:var(--dsw-alias-state-error-primary)}
 @media (prefers-reduced-motion:reduce){.dsh-op-stepsSpin{animation:none}}
 .dsh-op-expand{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);z-index:1450;
-  width:min(560px,calc(100vw - 64px));max-height:min(420px,55vh);display:flex;flex-direction:column;
+  width:min(600px,calc(100vw - 64px));max-height:min(460px,60vh);display:flex;flex-direction:column;
   border-radius:var(--dsw-radius-panel);background:var(--dsw-alias-bg-layer-1);
   border:.5px solid var(--dsw-alias-border-l2);box-shadow:var(--dsw-elevation-prominent);
-  color:var(--dsw-alias-label-primary);font-size:12.5px;line-height:19px;
+  color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;
   animation:dsh-op-pop-in .17s cubic-bezier(.22,1,.36,1) both}
 .dsh-op-expandHead{display:flex;align-items:center;gap:8px;padding:10px 12px;flex:none;
   border-bottom:1px solid var(--dsw-alias-border-l1)}
 .dsh-op-expandTitle{flex:1;font-size:13px;font-weight:600}
-.dsh-op-expandBody{flex:1;min-height:0;overflow-y:auto;padding:12px;
-  white-space:pre-wrap;word-break:break-word;user-select:text}
+/* Two columns: a fixed label rail and the value beside it. That is what makes the
+   result scannable — a run of label-plus-value lines set flush left reads as prose,
+   while an aligned rail lets the eye run down the labels. Values keep their own
+   wrapping, so a long one never pushes the rail narrower. */
+.dsh-op-expandBody{flex:1;min-height:0;overflow-y:auto;padding:14px 16px;
+  word-break:break-word;user-select:text}
+.dsh-op-expandRow{display:grid;grid-template-columns:88px 1fr;gap:12px;
+  align-items:baseline;padding:5px 0}
+.dsh-op-expandLabel{color:var(--dsw-alias-label-secondary);font-size:12px;
+  letter-spacing:.02em}
+.dsh-op-expandValue{color:var(--dsw-alias-label-primary);white-space:pre-wrap}
+.dsh-op-expandSection{margin:12px 0 4px;font-weight:600;font-size:12.5px;
+  color:var(--dsw-alias-label-primary)}
+.dsh-op-expandSection:first-child{margin-top:0}
+.dsh-op-expandNote2{white-space:pre-wrap;color:var(--dsw-alias-label-secondary);
+  padding:2px 0}
+.dsh-op-expandGap{height:6px}
 .dsh-op-expandFoot{display:flex;justify-content:flex-end;padding:8px 12px;flex:none;
   border-top:1px solid var(--dsw-alias-border-l1)}
 .dsh-op-expandNote{font-size:11.5px;color:var(--dsw-alias-label-secondary)}
@@ -879,26 +894,24 @@ window.__ModuleLoader__.load({
 .dsh-op-traceRow[data-kind="sent"] .dsh-op-traceTag{color:var(--dsw-alias-state-success-primary)}
 .dsh-op-traceRow[data-kind="conclusion"] .dsh-op-traceTag{color:var(--dsw-alias-state-warn-primary)}
 .dsh-op-traceText{white-space:pre-wrap;word-break:break-word;opacity:.9}
-/* Above the composer, centred: the panel reports on the run the button just
-   started, so it belongs where the eye already is. A fixed right-edge dock made it
-   read as a separate monitor and put it far from the button that opened it.
-   bottom:132px clears the composer (which is one row tall plus its toolbar); the
-   width tracks the composer so the two look like one stack. */
-.dsh-op-think{position:fixed;left:50%;bottom:132px;transform:translateX(-50%);z-index:1400;
-  width:min(560px,calc(100vw - 64px));max-width:calc(100vw - 64px);
-  max-height:min(380px,50vh);display:flex;flex-direction:column;border-radius:var(--dsw-radius-panel);
-  background:var(--dsw-alias-bg-layer-1);border:.5px solid var(--dsw-alias-border-l2);
+/* The autopilot's thinking window: a docked monitor at the top right, where it has
+   always been and where it stays out of the composer's way. It reports on a loop
+   that keeps running after the click, so a fixed corner is right for it — unlike the
+   expand result, which belongs directly above the composer. */
+.dsh-op-think{position:fixed;top:64px;right:16px;z-index:1400;width:300px;max-width:38vw;
+  max-height:min(420px,60vh);display:flex;flex-direction:column;border-radius:var(--dsw-radius-panel);
+  background:var(--dsw-alias-bg-layer-2);border:.5px solid var(--dsw-alias-border-l2);
   --dsw-elevation-stroke-color:var(--dsw-alias-border-l1);
   box-shadow:var(--dsw-elevation-prominent);color:var(--dsw-alias-label-primary);
   font-size:12px;line-height:17px;overflow:hidden;
-  /* Rises into place instead of sliding in from a side edge. */
+  /* Slides in from the right edge instead of appearing whole, and collapses with
+     a height transition so opening and folding both read as the same object. */
   animation:dsh-op-think-in .2s cubic-bezier(.22,1,.36,1) both;
   transition:max-height .18s ease}
-/* The keyframes must keep the centring translate, otherwise the panel jumps to the
-   left edge while the animation runs. */
+/* Back to the side-slide it had while docked at the right edge. */
 @keyframes dsh-op-think-in{
-  from{opacity:0;transform:translateX(-50%) translateY(12px) scale(.985)}
-  to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}
+  from{opacity:0;transform:translateX(18px) scale(.985)}
+  to{opacity:1;transform:translateX(0) scale(1)}
 }
 @media (prefers-reduced-motion:reduce){
   .dsh-op-think{animation:none;transition:none}
@@ -1319,10 +1332,10 @@ window.__ModuleLoader__.load({
         setNotice(mode === 'expand' ? t('working.expand') : t('working'))
         const requestId = `j${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`
         publishJob({ id: requestId, mode, steps: [], done: false, error: null, collapsed: false, sessionId: String(sessionId) })
-        // Open the process panel for this run: the same window the autopilot uses,
-        // now driven by the live job trace, so 思考 and tool calls stream instead of
-        // arriving only when the whole request settles.
-        publishThink({ open: true, sessionId: String(sessionId) })
+        // 润色 / 扩写 report through their own surfaces: the button state, the step
+        // rows at the end of the turn, and — for an expansion — the result card.
+        // The autopilot's thinking window is a different monitor and must not open
+        // here, or two unrelated panels appear for one click.
         const stopWatch = watchJob(requestId)
         const abort = typeof AbortController === 'function' ? new AbortController() : undefined
         activeAbort = abort ?? null
@@ -1867,27 +1880,90 @@ window.__ModuleLoader__.load({
 
     // ── expand result card ─────────────────────────────────────────────────
     /**
-     * The 扩写 result, and nothing to click.
+     * Split an expansion into rows the card can lay out.
      *
-     * The draft is written the moment the expansion lands, because that is what the
-     * button promised. The card then stays for a few seconds as a record of what
-     * went in: the composer is one line tall and the expansion is several paragraphs,
-     * so without it the user cannot read what they just asked for. Closing is explicit
-     * rather than a destructive choice, so there are no buttons to get wrong.
+     * The model answers with a brief, not a table: a leading heading, then lines
+     * shaped like `做什么 账号密码登录` or `- 边缘：密码错误 / 账号不存在`. Rendering that
+     * as one pre-wrapped blob wastes the width and buries the labels, so each line
+     * is classified instead:
+     *
+     *   heading  a `##`/`**bold**` line, or a line with no separator at all
+     *   field    `label<colon-or-wide-space>value` — becomes the two-column row
+     *   note     anything else, kept as prose
+     *
+     * Classification only; no rewriting. Text the model did not emit never appears.
+     */
+    function expandRows(text) {
+      const rows = []
+      for (const raw of String(text).split('\n')) {
+        const line = raw.replace(/\r$/u, '')
+        const trimmed = line.trim()
+        if (trimmed === '') { rows.push({ kind: 'gap' }); continue }
+        const heading = trimmed.replace(/^#{1,6}\s*/u, '').replace(/\*\*/gu, '').trim()
+        if (/^#{1,6}\s/u.test(trimmed) || /^\*\*[^*]+\*\*$/u.test(trimmed)) {
+          rows.push({ kind: 'heading', text: heading })
+          continue
+        }
+        // `做什么 账号密码登录`, `做什么：账号密码登录`, `- 边缘: …`
+        const bullet = trimmed.replace(/^[-*·]\s*/u, '')
+        const split = /^([^：:]{2,10})[：:]\s*(.+)$/u.exec(bullet)
+          ?? /^([^\s：:]{2,8})\s{2,}(.+)$/u.exec(bullet)
+          ?? /^([^\s：:]{2,8})\s+(.+)$/u.exec(bullet)
+        if (split !== null && split[2].trim() !== '') {
+          rows.push({ kind: 'field', label: split[1].trim(), value: split[2].trim() })
+          continue
+        }
+        // A short line with no separator at all is a title in practice — that is how
+        // `要造的` arrives, with the fields under it. Anything sentence-like stays
+        // prose, so a real paragraph is never mistaken for a heading.
+        if (bullet.length <= 12 && !/[。！？!?]$/u.test(bullet)) {
+          rows.push({ kind: 'heading', text: bullet })
+          continue
+        }
+        rows.push({ kind: 'note', text: bullet })
+      }
+      // Trim leading and trailing gaps so the card does not open with dead space.
+      while (rows.length > 0 && rows[0].kind === 'gap') rows.shift()
+      while (rows.length > 0 && rows[rows.length - 1].kind === 'gap') rows.pop()
+      return rows
+    }
+
+    /**
+     * The 扩写 result, laid out as a brief rather than a wall of text.
+     *
+     * The draft is already written by the time this appears — the card is a record,
+     * not a question, so there is nothing to confirm. Closing is the only action.
      */
     function ExpandCard({ t }) {
       const card = useExpandCard()
       if (card === null) return null
+      const rows = expandRows(card.text)
+      // A first row that reads as a title stays in the header, so the card does not
+      // spend a whole band on one word.
+      const headed = rows.length > 0 && rows[0].kind === 'heading' ? rows[0].text : null
+      const rest = headed === null ? rows : rows.slice(1)
       return h('div', { className: 'dsh-op-expand' },
         h('div', { className: 'dsh-op-expandHead' },
-          h('span', { className: 'dsh-op-expandTitle' }, t('expand.card.title')),
+          h('span', { className: 'dsh-op-expandTitle' }, headed ?? t('expand.card.title')),
           h('button', {
             type: 'button',
             className: 'dsh-op-thinkBtn',
             title: t('expand.card.close'),
             onClick: () => publishExpandCard(null),
           }, '✕')),
-        h('div', { className: 'dsh-op-expandBody' }, card.text),
+        h('div', { className: 'dsh-op-expandBody' },
+          rest.map((row, index) => {
+            if (row.kind === 'gap') return h('div', { key: String(index), className: 'dsh-op-expandGap' })
+            if (row.kind === 'heading') {
+              return h('div', { key: String(index), className: 'dsh-op-expandSection' }, row.text)
+            }
+            if (row.kind === 'field') {
+              return h('div', { key: String(index), className: 'dsh-op-expandRow' },
+                h('span', { className: 'dsh-op-expandLabel' }, row.label),
+                h('span', { className: 'dsh-op-expandValue' }, row.value))
+            }
+            return h('div', { key: String(index), className: 'dsh-op-expandNote2' }, row.text)
+          })),
         h('div', { className: 'dsh-op-expandFoot' },
           h('span', { className: 'dsh-op-expandNote' }, t('expand.card.written')))
       )
