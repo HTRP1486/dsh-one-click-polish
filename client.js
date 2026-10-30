@@ -695,7 +695,7 @@ window.__ModuleLoader__.load({
    Width is capped lower than before — 480px reads as a card, 600 read as a slab. */
 .dsh-op-run{position:fixed;left:0;right:0;margin:0 auto;bottom:120px;z-index:1440;
   width:min(480px,calc(100vw - 64px));max-width:480px;
-  height:290px;display:flex;flex-direction:column;
+  height:348px;display:flex;flex-direction:column;
   border-radius:var(--dsw-radius-lg);background:var(--dsw-alias-bg-layer-2);
   border:.5px solid var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);
   color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;overflow:hidden;
