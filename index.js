@@ -399,7 +399,12 @@ async function polishRoute(ctx, settings, req, res) {
   }
   const strength = STRENGTHS.includes(body?.strength) ? body.strength : settings.defaultStrength
   const mode = body?.mode === 'expand' ? 'expand' : 'polish'
-  const research = RESEARCH[strength] ?? 'none'
+  // Two independent switches, carried as a pair: a single string cannot say
+  // "web on, local off", which is exactly the combination the settings allow now.
+  const research = {
+    local: settings.useLocalLookup === true,
+    web: settings.useWebSearch === true,
+  }
   const requestId = typeof body?.requestId === 'string' && body.requestId !== '' ? body.requestId : null
   const job = requestId === null ? null : createJob(requestId, mode, research, typeof body?.sessionId === 'string' ? body.sessionId : '')
   if (job !== null) {
@@ -411,7 +416,8 @@ async function polishRoute(ctx, settings, req, res) {
   // The budget covers the rewrite only. The lookup runs under its own, shorter
   // deadline inside explore(), so a slow search can never eat the time the model
   // needs to actually answer.
-  const budgetMs = settings.timeoutMs + (research === 'none' ? 0 : settings.exploreMs)
+  const anyLookup = research.local === true || research.web === true
+  const budgetMs = settings.timeoutMs + (anyLookup ? settings.exploreMs : 0)
   const timer = setTimeout(() => controller.abort(), budgetMs)
   const model = `${selection.provider}/${selection.model}`
   // Run the work detached from the HTTP response.
@@ -462,7 +468,7 @@ async function polishRoute(ctx, settings, req, res) {
  * the two cannot drift.
  */
 async function produceRewrite(ctx, settings, mode, strength, research, input, agent, job, selection, controller) {
-  const findings = research === 'none'
+  const findings = research.local !== true && research.web !== true
     ? ''
     : await explore(ctx, selection, input, research, job, agent, controller.signal)
   markStep(job, 'explore', findings === '' ? 'skipped' : 'done',
@@ -968,7 +974,10 @@ function explorerTools(research) {
       parameters: { type: 'object', properties: { query: { type: 'string', description: '要搜索的字面串' } }, required: ['query'] },
     },
   ]
-  if (research === 'web') {
+  // The web tool is offered only when the web switch is on. Local tools are always
+  // offered: turning local lookup off removes the step, not the tools, so a run that
+  // somehow needs to check one file still can.
+  if (research.web === true) {
     tools.push({
       name: 'web_search',
       description: '联网搜索。engine 可选：auto（默认，必应+百度+GitHub 同时查）、github（仓库/插件）、bing（通用网页）、baidu（中文网页）。用于查清草稿里含糊的名字、版本、行为。',
@@ -1367,7 +1376,13 @@ function jobSteps(research) {
   const steps = []
   // Light is a plain rewrite: the model never looks anything up, so no lookup
   // step exists to show.
-  if (research !== 'none') steps.push({ key: 'explore', state: 'pending', label: '检索', detail: '' })
+  // One row per switch that is on. Off switches are not drawn — unlike the old
+  // level ladder there is no "skipped" state to explain, because the user turned
+  // it off themselves.
+  if (research.local === true) steps.push({ key: 'explore', state: 'pending', label: '本地检索', detail: '' })
+  if (research.web === true && research.local !== true) {
+    steps.push({ key: 'explore', state: 'pending', label: '联网搜索', detail: '' })
+  }
   steps.push({ key: 'rewrite', state: 'pending', label: '改写', detail: '' })
   return steps
 }
@@ -1580,7 +1595,11 @@ function readSettings(config) {
     exploreMs: Math.min(300_000, Math.max(5_000, positiveInt(config?.exploreMs, MAX_EXPLORE_MS))),
     exploreRounds: Math.min(10, Math.max(1, positiveInt(config?.exploreRounds, MAX_EXPLORE_ROUNDS))),
     instruction: typeof config?.instruction === 'string' ? config.instruction.trim() : '',
-    defaultStrength: STRENGTHS.includes(config?.defaultStrength) ? config.defaultStrength : 'strong',
+    // Two independent lookup switches, both on by default. `light` used to turn the
+    // whole lookup off and `standard` allowed only local; a user who wants neither
+    // can now say so without losing the levels they did want.
+    useLocalLookup: config?.useLocalLookup === undefined ? true : config.useLocalLookup === true,
+    useWebSearch: config?.useWebSearch === undefined ? true : config.useWebSearch === true,
     autoMode: config?.autoMode === 'goal' ? 'goal' : 'rounds',
     autoRounds: Math.min(MAX_AUTOPILOT_ROUNDS, positiveInt(config?.autoRounds, 5)),
     autoGoal: typeof config?.autoGoal === 'string' ? config.autoGoal.slice(0, 500) : '',
@@ -1678,6 +1697,8 @@ async function settingsRoute(ctx, settings, req, res) {
         provider: settings.provider,
         model: settings.model,
         reasoningEffort: settings.reasoningEffort,
+        useLocalLookup: settings.useLocalLookup,
+        useWebSearch: settings.useWebSearch,
         defaultStrength: settings.defaultStrength,
         autoMode: settings.autoMode,
         autoRounds: settings.autoRounds,
@@ -1700,6 +1721,9 @@ async function settingsRoute(ctx, settings, req, res) {
     provider: typeof body?.provider === 'string' ? body.provider : '',
     model: typeof body?.model === 'string' ? body.model : '',
     reasoningEffort: typeof body?.reasoningEffort === 'string' ? body.reasoningEffort : '',
+    // Two lookup switches. Absent means on, which is the documented default.
+    useLocalLookup: body?.useLocalLookup === undefined ? true : body.useLocalLookup === true,
+    useWebSearch: body?.useWebSearch === undefined ? true : body.useWebSearch === true,
     defaultStrength: STRENGTHS.includes(body?.defaultStrength) ? body.defaultStrength : settings.defaultStrength,
     autoMode: body?.autoMode === 'goal' ? 'goal' : (body?.autoMode === 'rounds' ? 'rounds' : settings.autoMode),
     autoRounds: Math.min(MAX_AUTOPILOT_ROUNDS, positiveInt(body?.autoRounds, settings.autoRounds)),
@@ -2031,7 +2055,7 @@ function pilotOf(sessionId) {
     mode: 'rounds',
     rounds: 5,
     goal: '',
-    research: 'local',
+    research: { local: true, web: false },
     round: 0,
     // Wall-clock budget in milliseconds; 0 means "no time limit".
     limitMs: 0,
@@ -2287,7 +2311,7 @@ async function drivePilot(ctx, sessionId, agentRef, pilot) {
   // a driver is already running reuses it instead of forking a second one.
   if (pilot.running === true) return
   pilot.running = true
-  const job = createJob(`autopilot-${sessionId}`, 'polish', pilot.research === 'none' ? 'none' : pilot.research, sessionId)
+  const job = createJob(`autopilot-${sessionId}`, 'polish', pilot.research, sessionId)
   // The driver's own lookups use the same configured budgets as a manual polish;
   // they ride on the pilot for the same reason idleWaitMs does.
   job.exploreMs = Number(pilot.exploreMs) > 0 ? Number(pilot.exploreMs) : MAX_EXPLORE_MS
@@ -2532,7 +2556,11 @@ async function autopilotRoute(ctx, settings, req, res) {
   pilot.mode = body?.mode === 'goal' ? 'goal' : 'rounds'
   pilot.rounds = Math.min(MAX_AUTOPILOT_ROUNDS, Math.max(1, Number(body?.rounds) || settings.autoRounds))
   pilot.goal = typeof body?.goal === 'string' ? body.goal.slice(0, 500) : settings.autoGoal
-  pilot.research = RESEARCH[body?.strength] ?? settings.autoResearch
+  // Autopilot inherits the same two switches as a one-shot run.
+  pilot.research = {
+    local: settings.useLocalLookup === true,
+    web: settings.useWebSearch === true,
+  }
   // Wall-clock cap in minutes; 0 or nonsense means "no time limit". The ceiling is
   // a day: an autopilot that keeps sending messages for longer than that is not
   // something this control should quietly allow.

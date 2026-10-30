@@ -399,6 +399,10 @@ window.__ModuleLoader__.load({
         'settings.effort': '思考程度',
         'settings.effort.default': '默认',
         'settings.effort.hint': '按当前模型实际支持的档位生成，不支持的档位不会出现；换模型时会自动回落。',
+        'settings.lookup': '检索',
+        'settings.lookup.local': '本地文件检索',
+        'settings.lookup.web': '联网搜索',
+        'settings.lookup.hint': '两个开关各自独立，默认都开启。关掉一个不影响另一个；两个都关就只用模型改写草稿。',
         'settings.strength': '默认力度',
         'settings.loading': '加载中…',
         'settings.save': '保存',
@@ -578,6 +582,10 @@ window.__ModuleLoader__.load({
         'settings.model.more': '{n} more — type to search',
         'settings.effort': 'Reasoning effort',
         'settings.effort.default': 'Default',
+        'settings.lookup': 'Lookup',
+        'settings.lookup.local': 'Local file lookup',
+        'settings.lookup.web': 'Web search',
+        'settings.lookup.hint': 'Two independent switches, both on by default. Turning one off leaves the other alone; turning both off rewrites the draft with the model only.',
         'settings.effort.hint': 'Options come from what this model actually supports; switching models falls back automatically.',
         'settings.strength': 'Default strength',
         'settings.loading': 'Loading…',
@@ -1615,18 +1623,10 @@ window.__ModuleLoader__.load({
         onClick: () => run(mode),
       }, iconFor(mode), h('span', null, labelFor(mode)))
 
+      // No level chip: 轻度/标准/深度 collapsed into the two lookup switches in
+      // settings, so there is no per-click choice left to make here.
       return h('div', { className: 'dsh-op-group' },
         buttonFor('polish'),
-        h('button', {
-          type: 'button',
-          className: 'dsh-op-level',
-          'data-level': strength,
-          'data-plugin': NAME,
-          title: t('level.hint'),
-          'aria-label': t('level.hint'),
-          onMouseDown: event => event.preventDefault(),
-          onClick: cycleStrength,
-        }, t(`level.${strength}`)),
         buttonFor('expand'),
         h('div', { className: 'dsh-op-auto', ref: autoRef },
           h('button', {
@@ -3101,6 +3101,29 @@ window.__ModuleLoader__.load({
               }),
               h('p', { className: 'dsh-op-hint' }, t('settings.effort.hint')))
             : null,
+          // The two lookup switches replace 轻度/标准/深度. Each is independent and on
+          // by default, so the default behaviour matches what 深度 used to do.
+          h('div', { className: 'dsh-op-field' },
+            h('div', { className: 'dsh-op-label' }, t('settings.lookup')),
+            h('label', { className: 'dsh-op-switch' },
+              h('input', {
+                type: 'checkbox',
+                checked: form.useLocalLookup !== false,
+                onChange: event => setForm({ ...form, useLocalLookup: event.target.checked }),
+              }),
+              h('span', { className: 'dsh-op-switchTrack', 'aria-hidden': 'true' },
+                h('span', { className: 'dsh-op-switchThumb' })),
+              h('span', { className: 'dsh-op-switchText' }, t('settings.lookup.local'))),
+            h('label', { className: 'dsh-op-switch' },
+              h('input', {
+                type: 'checkbox',
+                checked: form.useWebSearch !== false,
+                onChange: event => setForm({ ...form, useWebSearch: event.target.checked }),
+              }),
+              h('span', { className: 'dsh-op-switchTrack', 'aria-hidden': 'true' },
+                h('span', { className: 'dsh-op-switchThumb' })),
+              h('span', { className: 'dsh-op-switchText' }, t('settings.lookup.web'))),
+            h('p', { className: 'dsh-op-hint' }, t('settings.lookup.hint'))),
           h('div', { className: 'dsh-op-field' },
             h('div', { className: 'dsh-op-label' }, t('settings.idleWait')),
             h('p', { className: 'dsh-op-hint' }, t('settings.idleWait.hint')),
