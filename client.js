@@ -667,12 +667,14 @@ window.__ModuleLoader__.load({
    read as the same object at different stages rather than two design languages. */
 /* The panel is the composer's own surface, extended upward: same fill (bg-layer-2,
    which is what the composer uses), same radius family, no separate accent. */
-.dsh-op-run{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);z-index:1440;
+/* Measured composer rect when available (inline style); this is the first-frame
+   fallback. Centred with margins so the grow animation can own the transform. */
+.dsh-op-run{position:fixed;left:0;right:0;margin:0 auto;bottom:120px;z-index:1440;
   width:min(600px,calc(100vw - 64px));max-height:min(380px,50vh);display:flex;flex-direction:column;
   border-radius:var(--dsw-radius-lg);background:var(--dsw-alias-bg-layer-2);
   border:.5px solid var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);
   color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;overflow:hidden;
-  animation:dsh-op-pop-in .17s cubic-bezier(.22,1,.36,1) both}
+  animation:dsh-op-expand-grow .26s cubic-bezier(.16,1,.3,1) both}
 .dsh-op-runHead{display:flex;align-items:center;gap:8px;padding:10px 14px;flex:none;
   border-bottom:1px solid var(--dsw-alias-border-l1)}
 .dsh-op-runTitle{flex:1;font-size:13px;font-weight:600}
@@ -727,12 +729,24 @@ window.__ModuleLoader__.load({
   .dsh-op-taskStream{animation:none;filter:none}
   .dsh-op-expandRow{animation:none}
 }
-.dsh-op-expand{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);z-index:1450;
+/* Left/width/bottom come from the measured composer when one exists (inline style);
+   this block is the fallback for the first frame, before measurement, and the visual
+   language either way. Centred with auto margins rather than translateX so the grow
+   animation can own the transform without fighting the anchor. */
+.dsh-op-expand{position:fixed;left:0;right:0;margin:0 auto;bottom:120px;z-index:1450;
   width:min(600px,calc(100vw - 64px));max-height:min(460px,60vh);display:flex;flex-direction:column;
   border-radius:var(--dsw-radius-panel);background:var(--dsw-alias-bg-layer-1);
   border:.5px solid var(--dsw-alias-border-l2);box-shadow:var(--dsw-elevation-prominent);
   color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;
-  animation:dsh-op-pop-in .17s cubic-bezier(.22,1,.36,1) both}
+  animation:dsh-op-expand-grow .28s cubic-bezier(.16,1,.3,1) both}
+/* Grows up out of the composer: starts slightly smaller, clipped at the bottom edge,
+   so it reads as the composer extending rather than a dialog fading in. No translateX
+   here — once measured, the element is positioned by left/width, and an animated
+   transform would shift it off that anchor. */
+@keyframes dsh-op-expand-grow{
+  from{opacity:0;transform:scale(.96);clip-path:inset(100% 0 0 0)}
+  to{opacity:1;transform:scale(1);clip-path:inset(0 0 0 0)}
+}
 .dsh-op-expandHead{display:flex;align-items:center;gap:8px;padding:10px 12px;flex:none;
   border-bottom:1px solid var(--dsw-alias-border-l1)}
 .dsh-op-expandTitle{flex:1;font-size:13px;font-weight:600}
@@ -2024,13 +2038,25 @@ window.__ModuleLoader__.load({
      */
     function ExpandCard({ t }) {
       const card = useExpandCard()
+      // Measured even when the card is closed: hooks must run on every render.
+      const box = useComposerBox(0)
       if (card === null) return null
       const rows = expandRows(card.text)
       // A first row that reads as a title stays in the header, so the card does not
       // spend a whole band on one word.
       const headed = rows.length > 0 && rows[0].kind === 'heading' ? rows[0].text : null
       const rest = headed === null ? rows : rows.slice(1)
-      return h('div', { className: 'dsh-op-expand' },
+      // Same width and left edge as the composer, one gap above it, so the result
+      // reads as the composer expanded rather than a dialog that happened to appear.
+      const frame = box === null
+        ? undefined
+        : {
+          left: box.left + 'px',
+          width: box.width + 'px',
+          bottom: box.bottom + 12 + 'px',
+          transform: 'none',
+        }
+      return h('div', { className: 'dsh-op-expand', style: frame },
         h('div', { className: 'dsh-op-expandHead' },
           h('span', { className: 'dsh-op-expandTitle' }, headed ?? t('expand.card.title')),
           h('button', {
@@ -2057,6 +2083,56 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /**
+     * The composer's box, measured from the live DOM.
+     *
+     * A panel that reports on the composer has to line up with it, and the composer
+     * is not a fixed size: it narrows when the right sidebar opens and it reflows with
+     * the window. A hard-coded width and offset drifts away from it on any machine
+     * that is not the one it was written on, so the rect is read instead.
+     *
+     * Returns null when the composer has not mounted yet (first frame), and re-reads
+     * on resize and on every poll, so a layout change moves the panel with it.
+     */
+    function useComposerBox(intervalMs = 0) {
+      const [box, setBox] = useState(null)
+      useEffect(() => {
+        let timer = null
+        // Several editors can be on screen at once in theory; the visible one with a
+        // toolbar is the composer that raised this panel.
+        const find = () => {
+          const nodes = document.querySelectorAll('[class*="composer"]')
+          let best = null
+          for (const node of nodes) {
+            const rect = node.getBoundingClientRect()
+            if (rect.width < 240 || rect.height < 40) continue
+            if (best === null || rect.width > best.width) best = rect
+          }
+          return best
+        }
+        const read = () => {
+          const rect = find()
+          if (rect === null) return
+          const next = {
+            left: Math.round(rect.left),
+            width: Math.round(rect.width),
+            bottom: Math.round(window.innerHeight - rect.top),
+          }
+          setBox(previous => (previous !== null
+            && previous.left === next.left
+            && previous.width === next.width
+            && previous.bottom === next.bottom ? previous : next))
+        }
+        read()
+        window.addEventListener('resize', read)
+        if (intervalMs > 0) timer = setInterval(read, intervalMs)
+        return () => {
+          window.removeEventListener('resize', read)
+          if (timer !== null) clearInterval(timer)
+        }
+      }, [intervalMs])
+      return box
+    }
     // ── run panel: 润色 / 扩写, above the composer ────────────────────────────
     /**
      * The process of a one-shot 润色 or 扩写, drawn above the composer.
@@ -2085,6 +2161,9 @@ window.__ModuleLoader__.load({
         ? []
         : job.trace.slice(-40)
       const running = job !== null && job.done !== true
+      // The panel tracks the composer it reports on. Re-measured while a job is live
+      // so opening the right sidebar slides the panel with it.
+      const box = useComposerBox(running ? 400 : 0)
 
       // Ask for a translation once the row has settled. A live row keeps changing, so
       // it is skipped until `live` clears; that keeps one request per finished thought
@@ -2197,7 +2276,20 @@ window.__ModuleLoader__.load({
         streamNode)
       }
 
-      return h('div', { className: 'dsh-op-run' },
+      // Anchored on the composer's own rect, so the panel is exactly as wide as the
+      // composer and sits one gap above it. Before the composer is measured there is
+      // nothing to line up with, so the first frame uses the old centred fallback and
+      // the next frame snaps into place.
+      const frame = box === null
+        ? undefined
+        : {
+          left: box.left + 'px',
+          width: box.width + 'px',
+          bottom: box.bottom + 12 + 'px',
+          transform: 'none',
+        }
+
+      return h('div', { className: 'dsh-op-run', style: frame },
         h('div', { className: 'dsh-op-runHead' },
           h('span', { className: 'dsh-op-runTitle' },
             failed ? t('job.failed') : running ? title : t('job.done')),
