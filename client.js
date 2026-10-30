@@ -2121,43 +2121,52 @@ window.__ModuleLoader__.load({
         const find = () => {
           const anchor = document.querySelector('.dsh-op-group')
             ?? document.querySelector('[class*="dsh-op-btn"]')
+          if (anchor === null) return null
 
-          // Walk up from the toolbar to the input box. Neither width nor height alone
-          // identifies it: the toolbar row is ~28px and only as wide as its buttons,
-          // while the column above the input is a full-height panel. What separates
-          // the input from everything else is its shape — it is wide AND only a few
-          // rows tall — so the walk returns the first ancestor in that band.
-          if (anchor !== null) {
-            let current = anchor
-            for (let depth = 0; depth < 10; depth += 1) {
-              const parent = current.parentElement
-              if (parent === null) break
-              const rect = parent.getBoundingClientRect()
-              // Wide enough to hold a draft, tall enough to be more than the toolbar,
-              // but not so tall that it is the chat column or the whole window.
-              if (rect.width >= 400 && rect.height >= 44 && rect.height <= 260) return rect
-              current = parent
-            }
+          // Step 1: the input card. Climb while the parent stays within 8% of the
+          // child's width — padding and border only — and stop at the first ancestor
+          // wider than that, which is the column.
+          let current = anchor
+          let card = anchor.getBoundingClientRect()
+          for (let depth = 0; depth < 12; depth += 1) {
+            const parent = current.parentElement
+            if (parent === null) break
+            const rect = parent.getBoundingClientRect()
+            if (rect.width > card.width * 1.08) break
+            if (rect.height > 260) break
+            current = parent
+            card = rect
           }
 
-          // No toolbar on screen (another session is in front): take the widest
-          // composer-classed box that is still input-shaped.
-          let best = null
-          for (const node of document.querySelectorAll('[class*="composer"]')) {
+          // Step 2: the conversation column, which is what the panel centres on. The
+          // card itself is inset inside the column; centring on the card drifts right
+          // whenever the column is wider on one side, which is what put the panel off
+          // centre. The column is the nearest ancestor that is tall (holds the chat)
+          // and wider than the card.
+          let column = null
+          let node = current.parentElement
+          for (let depth = 0; depth < 6 && node !== null; depth += 1) {
             const rect = node.getBoundingClientRect()
-            if (rect.height < 44 || rect.height > 260 || rect.width < 240) continue
-            if (best === null || rect.width > best.width) best = rect
+            if (rect.height > 260 && rect.width >= card.width) { column = rect; break }
+            node = node.parentElement
           }
-          return best
-        }
 
+          // Horizontal from the column (so centring matches the conversation), vertical
+          // from the card (so the panel hugs the input, not the whole column).
+          return {
+            left: column === null ? card.left : column.left,
+            width: column === null ? card.width : column.width,
+            bottom: Math.round(window.innerHeight - card.top),
+          }
+        }
         const read = () => {
           const rect = find()
           if (rect === null) return
           const next = {
             left: Math.round(rect.left),
             width: Math.round(rect.width),
-            bottom: Math.round(window.innerHeight - rect.top),
+            // find() already resolved this against the card's top edge.
+            bottom: Math.round(rect.bottom),
           }
           setBox(previous => (previous !== null
             && previous.left === next.left
