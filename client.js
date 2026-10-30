@@ -2054,17 +2054,30 @@ window.__ModuleLoader__.load({
       // full width: a brief is a card that sits over the conversation, and matching
       // the composer edge to edge made it read as a second input box. Centring inside
       // the composer keeps it belonging to the same column without claiming its width.
-      const frame = box === null
-        ? undefined
-        : (() => {
-          const width = Math.min(600, Math.round(box.width * 0.72))
-          return {
-            left: Math.round(box.left + (box.width - width) / 2) + 'px',
-            width: width + 'px',
-            bottom: box.bottom + 12 + 'px',
-            transform: 'none',
-          }
-        })()
+      const frame = (() => {
+        if (box === null) return undefined
+        const available = Number(box.width)
+        const left0 = Number(box.left)
+        const bottom = Number(box.bottom)
+        if (!Number.isFinite(available) || available <= 0) return undefined
+        if (!Number.isFinite(left0) || !Number.isFinite(bottom)) return undefined
+        const width = Math.min(600, Math.round(available * 0.72))
+        let left = Math.round(left0 + (available - width) / 2)
+        const viewport = typeof window.innerWidth === 'number' ? window.innerWidth : 0
+        if (viewport > 0) left = Math.max(8, Math.min(left, viewport - width - 8))
+        // box.bottom already measures from the window bottom to the composer's top, so
+        // only a small gap is added. Adding the composer's height on top of that
+        // pushed the card up into the conversation, where it looked like it had
+        // vanished behind the chat.
+        const safeBottom = Math.max(80, Math.min(bottom + 8,
+          (typeof window.innerHeight === 'number' ? window.innerHeight : 900) - 80))
+        return {
+          left: left + 'px',
+          width: width + 'px',
+          bottom: safeBottom + 'px',
+          transform: 'none',
+        }
+      })()
       return h('div', { className: 'dsh-op-expand', style: frame },
         h('div', { className: 'dsh-op-expandHead' },
           h('span', { className: 'dsh-op-expandTitle' }, headed ?? t('expand.card.title')),
@@ -2157,21 +2170,28 @@ window.__ModuleLoader__.load({
             left: column === null ? card.left : column.left,
             width: column === null ? card.width : column.width,
             bottom: Math.round(window.innerHeight - card.top),
+            // The card's own height, so the panel clears the input instead of
+            // overlapping it. Without this the panel sat behind the composer.
+            height: Math.round(card.height),
           }
         }
         const read = () => {
           const rect = find()
           if (rect === null) return
-          const next = {
-            left: Math.round(rect.left),
-            width: Math.round(rect.width),
-            // find() already resolved this against the card's top edge.
-            bottom: Math.round(rect.bottom),
-          }
+          // `find` returns a plain box; guard each field so one bad value cannot
+          // produce NaN, which would give inline styles like "NaNpx" and hide the
+          // panel entirely.
+          const left = Number.isFinite(rect.left) ? Math.round(rect.left) : null
+          const width = Number.isFinite(rect.width) ? Math.round(rect.width) : null
+          const bottom = Number.isFinite(rect.bottom) ? Math.round(rect.bottom) : null
+          const height = Number.isFinite(rect.height) ? Math.round(rect.height) : 0
+          if (left === null || width === null || bottom === null || width <= 0) return
+          const next = { left, width, bottom, height }
           setBox(previous => (previous !== null
             && previous.left === next.left
             && previous.width === next.width
-            && previous.bottom === next.bottom ? previous : next))
+            && previous.bottom === next.bottom
+            && previous.height === next.height ? previous : next))
         }
         read()
         window.addEventListener('resize', read)
@@ -2326,22 +2346,37 @@ window.__ModuleLoader__.load({
         streamNode)
       }
 
-      // Narrower than the composer and centred inside it. Matching the composer edge
-      // to edge made the panel 1200px wide on a wide window and read as a second input
-      // box; a panel that reports on the composer should sit inside that column, not
-      // reproduce it. The 0.72 factor keeps a wide margin on both sides at any
-      // width, and 600px caps it so it never becomes a banner on a huge screen.
-      const frame = box === null
-        ? undefined
-        : (() => {
-          const width = Math.min(600, Math.round(box.width * 0.72))
-          return {
-            left: Math.round(box.left + (box.width - width) / 2) + 'px',
-            width: width + 'px',
-            bottom: box.bottom + 12 + 'px',
-            transform: 'none',
-          }
-        })()
+      // Narrower than the composer and centred inside it. The 0.72 factor keeps a
+      // wide margin on both sides at any width, and 600px caps it so it never becomes
+      // a banner on a huge screen. Every value is checked before use: one undefined
+      // field would produce "NaNpx" and the browser would drop the whole declaration,
+      // which is how a measurement bug turns into a disappearing panel.
+      const frame = (() => {
+        if (box === null) return undefined
+        const available = Number(box.width)
+        const left0 = Number(box.left)
+        const bottom = Number(box.bottom)
+        if (!Number.isFinite(available) || available <= 0) return undefined
+        if (!Number.isFinite(left0) || !Number.isFinite(bottom)) return undefined
+        // Cap first, then centre the capped width inside the available span.
+        const width = Math.min(600, Math.round(available * 0.72))
+        let left = Math.round(left0 + (available - width) / 2)
+        const viewport = typeof window.innerWidth === 'number' ? window.innerWidth : 0
+        if (viewport > 0) left = Math.max(8, Math.min(left, viewport - width - 8))
+        // box.bottom already runs from the window bottom to the composer's top, so the
+        // panel needs a small gap and nothing more. Adding the composer's height again
+        // lifted the panel into the conversation, where it hid behind the chat and
+        // looked like it had disappeared.
+        const safeBottom = Math.max(80,
+          Math.min(bottom + 8,
+            (typeof window.innerHeight === 'number' ? window.innerHeight : 900) - 80))
+        return {
+          left: left + 'px',
+          width: width + 'px',
+          bottom: safeBottom + 'px',
+          transform: 'none',
+        }
+      })()
 
       return h('div', { className: 'dsh-op-run', style: frame },
         h('div', { className: 'dsh-op-runHead' },
