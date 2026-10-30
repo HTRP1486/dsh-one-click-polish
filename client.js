@@ -695,7 +695,7 @@ window.__ModuleLoader__.load({
    Width is capped lower than before — 480px reads as a card, 600 read as a slab. */
 .dsh-op-run{position:fixed;left:0;right:0;margin:0 auto;bottom:120px;z-index:1440;
   width:min(480px,calc(100vw - 64px));max-width:480px;
-  height:236px;display:flex;flex-direction:column;
+  height:290px;display:flex;flex-direction:column;
   border-radius:var(--dsw-radius-lg);background:var(--dsw-alias-bg-layer-2);
   border:.5px solid var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);
   color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;overflow:hidden;
@@ -732,16 +732,18 @@ window.__ModuleLoader__.load({
    Exactly two lines tall, clipped: the newest words stay on screen and older ones
    leave upward, so a long paragraph never grows the row. overflow is hidden but the
    box is still programmatically scrollable, which is how it is pinned to the bottom.
-   The blur-to-clear fade plays once when the thought starts; after that the
-   character-by-character reveal carries the motion. */
+   The box itself does not animate — the blur belongs to the characters that are
+   arriving, see .dsh-op-fresh. */
 .dsh-op-taskStream{display:block;box-sizing:border-box;
   margin:2px 0 0 21px;padding:0;height:36px;overflow:hidden;
   white-space:pre-wrap;word-break:break-word;
-  color:var(--dsw-alias-label-secondary);font-size:11.5px;line-height:18px;
-  animation:dsh-op-stream-in .42s cubic-bezier(.16,1,.3,1) both}
-@keyframes dsh-op-stream-in{
-  from{opacity:0;filter:blur(4px)}
-  to{opacity:.92;filter:blur(0)}
+  color:var(--dsw-alias-label-secondary);font-size:11.5px;line-height:18px}
+/* The newest characters, re-mounted as each one lands, so the blur-to-clear rides the
+   typing instead of playing once on mount and finishing before any text exists. */
+.dsh-op-fresh{animation:dsh-op-fresh .34s cubic-bezier(.16,1,.3,1) both}
+@keyframes dsh-op-fresh{
+  from{opacity:.15;filter:blur(3.2px)}
+  to{opacity:.95;filter:blur(0)}
 }
 /* File activity reads as its own quiet line, not a task: it is evidence, not a step. */
 .dsh-op-runTool{display:flex;align-items:baseline;gap:8px;margin-top:6px;
@@ -2277,8 +2279,25 @@ window.__ModuleLoader__.load({
         if (node !== null) node.scrollTop = node.scrollHeight
       })
 
+      // Only the newest few characters are wrapped in an animated span. Its key moves
+      // with the reveal cursor, so the span remounts as each character lands and the
+      // blur-to-clear replays for exactly those characters — the effect follows the
+      // typing instead of finishing before the text starts, which is what happened when
+      // the animation sat on the whole box.
+      const visible = text.slice(0, shown)
+      const freshLength = 9
+      const cut = Math.max(0, visible.length - freshLength)
+      const settled = visible.slice(0, cut)
+      const fresh = visible.slice(cut)
+
       return h('span', { className: 'dsh-op-taskStream', ref: boxRef },
-        text.slice(0, shown))
+        settled,
+        fresh === ''
+          ? null
+          : h('span', {
+            key: 'fresh-' + cut + '-' + fresh.length,
+            className: 'dsh-op-fresh',
+          }, fresh))
     }
     // ── run panel: 润色 / 扩写, above the composer ────────────────────────────
     /**
