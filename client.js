@@ -2337,6 +2337,13 @@ window.__ModuleLoader__.load({
       const tools = trace.filter(entry => entry.kind === 'tool')
       const tool = tools.length === 0 ? null : tools[tools.length - 1]
 
+      // Which row is working, decided by phase rather than by the step's own state: the
+      // explore step stays 'pending' until the model's first tool call returns, so
+      // keying the thought off 'running' left the panel blank through the whole opening
+      // round — the exact symptom that made the lookups look like they did nothing.
+      const lookupBusy = rewriteState !== 'running' && rewriteState !== 'done'
+      const lookupThought = lookupBusy ? tail : ''
+
       // Each task is one line that settles in on its own beat: settled rows blur to
       // clear, the active one keeps its own stream underneath. Staggering by index
       // makes the three land in sequence instead of all at once, which is what the
@@ -2355,9 +2362,11 @@ window.__ModuleLoader__.load({
           detail === undefined || detail === '' ? null
             : h('span', { className: 'dsh-op-taskDetail' }, detail),
         ]
-        // A running row carries its thought in the same line, indented under the
-        // label, so the panel stays three rows tall however long the reasoning is.
-        const streamNode = active && stream !== undefined && stream !== ''
+        // The thought is drawn whenever one was handed in. Gating it on `running` was
+        // wrong: a step stays 'pending' until its phase reports back, so the row that is
+        // visibly doing the work often has no 'running' state yet, and the panel showed
+        // an empty row for the whole opening round.
+        const streamNode = stream !== undefined && stream !== ''
           ? h('span', {
             // Re-keyed on the text so the blur-to-clear animation replays per delta.
             key: 'stream-' + stream.slice(-20),
@@ -2414,27 +2423,21 @@ window.__ModuleLoader__.load({
             onClick: () => setDismissedId(job.id),
           }, '✕')),
         h('div', { className: 'dsh-op-runBody', ref: bodyRef },
-          // The thought rides on the row that is doing the work: lookup rows show the
-          // reasoning while 检索 runs, the rewrite row shows it while 改写 runs. That
-          // keeps the panel three lines tall instead of a list plus a separate text
-          // block that grows.
+          // One row per switch that is on, kept separate: they are two things the user
+          // turned on, and folding them into one label hid that.
           //
-          // A switch the user turned off draws no row at all. It is not "skipped" —
-          // the user decided it, so there is nothing to report, and a row explaining a
-          // Both lookups happen inside one explore() call, so they are one row, not
-          // two: drawing 本地检索 and 联网搜索 side by side printed the same reasoning
-          // twice. The label names whichever switches are on.
-          //
-          // A switch the user turned off draws no row at all. It is not "skipped" —
-          // the user decided it, so there is nothing to report.
-          wantsLocal || wantsWeb
-            ? rowFor('lookup',
-              wantsLocal && wantsWeb
-                ? t('run.task.both')
-                : (wantsLocal ? t('run.task.local') : t('run.task.web')),
-              exploreState, 0, undefined, exploreState === 'running' ? tail : '')
+          // The thought is drawn once, on the row that is actually working. Both lookups
+          // run inside the same explore() call, so printing it under both duplicated
+          // the same paragraph.
+          wantsLocal
+            ? rowFor('local', t('run.task.local'), localState, 0, undefined, lookupThought)
             : null,
-          rowFor('rewrite', verb, rewriteState, wantsLocal || wantsWeb ? 1 : 0, undefined,
+          wantsWeb
+            ? rowFor('web', t('run.task.web'), webState, 1, undefined,
+              // Only the first lookup row carries it; the second stays clean.
+              wantsLocal ? '' : lookupThought)
+            : null,
+          rowFor('rewrite', verb, rewriteState, wantsLocal || wantsWeb ? 2 : 0, undefined,
             rewriteState === 'running' ? tail : ''),
           tool === null
             ? null
