@@ -275,6 +275,11 @@ window.__ModuleLoader__.load({
         'job.label': '润色步骤',
         'run.waiting': '等待模型响应…',
         'run.close': '关闭这个过程面板',
+        'run.task.local': '本地检索',
+        'run.task.web': '联网搜索',
+        'run.task.polish': '润色重写',
+        'run.task.expand': '扩写重写',
+        'run.skipped': '已跳过',
         'job.failed': '失败',
         'job.hide': '收起',
         'job.cancel': '取消这次操作',
@@ -450,6 +455,11 @@ window.__ModuleLoader__.load({
         'job.label': 'Polish steps',
         'run.waiting': 'Waiting for the model…',
         'run.close': 'Close this process panel',
+        'run.task.local': 'Local lookup',
+        'run.task.web': 'Web search',
+        'run.task.polish': 'Rewrite',
+        'run.task.expand': 'Expand',
+        'run.skipped': 'Skipped',
         'job.failed': 'Failed',
         'job.hide': 'Collapse',
         'job.cancel': 'Cancel this run',
@@ -655,30 +665,56 @@ window.__ModuleLoader__.load({
    positioned higher so an expand result can appear under it without overlap. */
 /* Same surface as the result card: one radius, one fill, one border, so the two panels
    read as the same object at different stages rather than two design languages. */
+/* The panel is the composer's own surface, extended upward: same fill (bg-layer-2,
+   which is what the composer uses), same radius family, no separate accent. */
 .dsh-op-run{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);z-index:1440;
-  width:min(600px,calc(100vw - 64px));max-height:min(420px,52vh);display:flex;flex-direction:column;
-  border-radius:var(--dsw-radius-panel);background:var(--dsw-alias-bg-layer-1);
-  border:.5px solid var(--dsw-alias-border-l2);box-shadow:var(--dsw-elevation-prominent);
+  width:min(600px,calc(100vw - 64px));max-height:min(380px,50vh);display:flex;flex-direction:column;
+  border-radius:var(--dsw-radius-lg);background:var(--dsw-alias-bg-layer-2);
+  border:.5px solid var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);
   color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;overflow:hidden;
   animation:dsh-op-pop-in .17s cubic-bezier(.22,1,.36,1) both}
-.dsh-op-runHead{display:flex;align-items:center;gap:8px;padding:10px 12px;flex:none;
+.dsh-op-runHead{display:flex;align-items:center;gap:8px;padding:10px 14px;flex:none;
   border-bottom:1px solid var(--dsw-alias-border-l1)}
 .dsh-op-runTitle{flex:1;font-size:13px;font-weight:600}
-.dsh-op-runBody{flex:1;min-height:0;overflow-y:auto;padding:12px 14px;display:flex;
-  flex-direction:column;gap:9px}
-.dsh-op-runWait{color:var(--dsw-alias-label-secondary);font-size:11.5px}
-/* The tag sits above the text instead of beside it: a reasoning paragraph beside an
-   inline label wrapped into a narrow column and read as a hanging indent. Both parts
-   use label colours — the tag is bold, not tinted, so the panel has no accent of its
-   own. */
-.dsh-op-runRow{display:flex;flex-direction:column;gap:3px;
-  color:var(--dsw-alias-label-secondary)}
-.dsh-op-runRow[data-kind="round"]{color:var(--dsw-alias-label-primary)}
-.dsh-op-runTag{font-weight:600;color:var(--dsw-alias-label-secondary);font-size:11px;
-  letter-spacing:.02em}
-.dsh-op-runText{white-space:pre-wrap;word-break:break-word;opacity:.92}
-.dsh-op-runErr{margin-top:4px;font-size:11px;color:var(--dsw-alias-state-error-primary)}
-@media (prefers-reduced-motion:reduce){.dsh-op-run{animation:none}}
+.dsh-op-runBody{flex:1;min-height:0;overflow-y:auto;padding:10px 14px 12px;display:flex;
+  flex-direction:column;gap:2px}
+/* One row per task. The dot carries the state so the eye can run down the three
+   rows and see where the work is without reading them. */
+.dsh-op-task{display:flex;align-items:baseline;gap:8px;padding:3px 0;
+  color:var(--dsw-alias-label-secondary);font-size:12.5px}
+.dsh-op-task[data-state="running"],.dsh-op-task[data-state="done"]{
+  color:var(--dsw-alias-label-primary)}
+.dsh-op-task[data-state="error"]{color:var(--dsw-alias-state-error-primary)}
+.dsh-op-task[data-state="skipped"]{opacity:.55}
+.dsh-op-taskDot{flex:none;width:13px;text-align:center;font-size:11px}
+.dsh-op-taskText{flex:none}
+.dsh-op-taskDetail{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;opacity:.7;text-align:right}
+/* The streaming thought: two lines, newest at the bottom. The blur-to-clear fade
+   replays on every delta (the element is re-keyed), so new words settle in instead
+   of popping. filter is the only animated property besides opacity, which keeps
+   it on the compositor. */
+.dsh-op-runStream{margin:6px 0 2px;padding:8px 10px;border-radius:var(--dsw-radius-sm);
+  background:var(--dsw-alias-bg-base);border:.5px solid var(--dsw-alias-border-l1)}
+.dsh-op-runText{white-space:pre-wrap;word-break:break-word;
+  color:var(--dsw-alias-label-primary);font-size:12px;line-height:19px;opacity:.92;
+  animation:dsh-op-stream-in .42s cubic-bezier(.16,1,.3,1) both}
+@keyframes dsh-op-stream-in{
+  from{opacity:0;filter:blur(4px);transform:translateY(3px)}
+  to{opacity:.92;filter:blur(0);transform:translateY(0)}
+}
+/* File activity reads as its own quiet line, not a task: it is evidence, not a step. */
+.dsh-op-runTool{display:flex;align-items:baseline;gap:8px;margin-top:6px;
+  padding-top:7px;border-top:1px solid var(--dsw-alias-border-l1);
+  color:var(--dsw-alias-label-secondary);font-size:11.5px}
+.dsh-op-runToolName{flex:none;font-weight:600;opacity:.9}
+.dsh-op-runToolDetail{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;opacity:.75}
+.dsh-op-runErr{margin-top:6px;font-size:11px;color:var(--dsw-alias-state-error-primary)}
+@media (prefers-reduced-motion:reduce){
+  .dsh-op-run{animation:none}
+  .dsh-op-runText{animation:none;filter:none}
+}
 .dsh-op-expand{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);z-index:1450;
   width:min(600px,calc(100vw - 64px));max-height:min(460px,60vh);display:flex;flex-direction:column;
   border-radius:var(--dsw-radius-panel);background:var(--dsw-alias-bg-layer-1);
@@ -2060,6 +2096,59 @@ window.__ModuleLoader__.load({
       if (dismissedId !== null && job.id === dismissedId) return null
       const failed = job.error !== null && job.error !== undefined
       const title = job.mode === 'expand' ? t('job.expanding') : t('job.polishing')
+      const verb = job.mode === 'expand' ? t('run.task.expand') : t('run.task.polish')
+
+      // Three rows, always all three, in the order the work happens. The strength
+      // decides which of them actually runs — 轻度 skips the lookup entirely — so a
+      // skipped row says so instead of silently vanishing, which is what made the
+      // panel look like it had lost a step.
+      const research = job.research ?? 'local'
+      const wantsLocal = research !== 'none'
+      const wantsWeb = research === 'web'
+      // A row is done when the job's own step list says so; the trace tells the
+      // active one what to show underneath.
+      const steps = Array.isArray(job.steps) ? job.steps : []
+      const stepState = key => {
+        const found = steps.find(item => item.key === key)
+        if (found === undefined) return 'pending'
+        return found.state ?? 'pending'
+      }
+      const rewriteState = stepState('rewrite')
+      const exploreState = stepState('explore')
+      const localState = wantsLocal ? exploreState : 'skipped'
+      const webState = wantsWeb ? exploreState : 'skipped'
+
+      // The newest settled or live reasoning, two lines at most. Showing the whole
+      // trace turned the panel into a wall of text that scrolled away from the
+      // sentence being written; the point is to watch the current thought arrive.
+      const thoughts = trace
+        .filter(entry => entry.kind === 'round')
+        .map(entry => (entry.reasoning || entry.text || '').trim())
+        .filter(text => text !== '')
+      const newest = thoughts.length === 0 ? '' : thoughts[thoughts.length - 1]
+      const shown = translated[newest] ?? newest
+      // Two lines of text, measured in characters: a live row is one sentence and a
+      // settled one is a paragraph, so the tail is what the reader wants.
+      const lines = shown.split('\n').filter(line => line.trim() !== '')
+      const tail = lines.slice(-2).join('\n')
+
+      // The newest tool call, so file activity reads as its own line under the tasks.
+      const tools = trace.filter(entry => entry.kind === 'tool')
+      const tool = tools.length === 0 ? null : tools[tools.length - 1]
+
+      const rowFor = (id, label, state, detail) => h('div', {
+        key: id,
+        className: 'dsh-op-task',
+        'data-state': state,
+      },
+      h('span', { className: 'dsh-op-taskDot' },
+        state === 'done' ? '✓'
+          : state === 'error' ? '✕'
+            : state === 'running' ? '◐'
+              : state === 'skipped' ? '–' : '○'),
+      h('span', { className: 'dsh-op-taskText' }, label),
+      detail === undefined || detail === '' ? null
+        : h('span', { className: 'dsh-op-taskDetail' }, detail))
 
       return h('div', { className: 'dsh-op-run' },
         h('div', { className: 'dsh-op-runHead' },
@@ -2072,30 +2161,25 @@ window.__ModuleLoader__.load({
             onClick: () => setDismissedId(job.id),
           }, '✕')),
         h('div', { className: 'dsh-op-runBody', ref: bodyRef },
-          trace.length === 0
-            ? h('div', { className: 'dsh-op-runWait' }, t('run.waiting'))
-            : trace.map((entry, index) => {
-              const kind = entry.kind
-              const tag = kind === 'tool'
-                ? (entry.name ?? 'tool')
-                : kind === 'round'
-                  ? t('auto.trace.think')
-                  : t('auto.trace.conclusion')
-              const raw = kind === 'tool'
-                ? `${entry.summary ?? ''}${entry.text ? ` — ${entry.text}` : ''}`
-                : (entry.reasoning || entry.text || '')
-              // Tool summaries are already Chinese (they come from this plugin), so
-              // only the model's own reasoning is translated.
-              const body = kind === 'tool' ? raw : (translated[raw.trim()] ?? raw)
-              return h('div', {
-                key: String(index),
-                className: 'dsh-op-runRow',
-                'data-kind': kind,
-                'data-live': entry.live === true ? 'true' : 'false',
-              },
-              h('span', { className: 'dsh-op-runTag' }, tag),
-              h('span', { className: 'dsh-op-runText' }, String(body)))
-            }),
+          rowFor('local', t('run.task.local'), localState,
+            localState === 'skipped' ? t('run.skipped') : undefined),
+          rowFor('web', t('run.task.web'), webState,
+            webState === 'skipped' ? t('run.skipped') : undefined),
+          rowFor('rewrite', verb, rewriteState),
+          // The active row's thought, streamed: two lines, newest at the bottom, and
+          // each render re-mounts the text so the fade-and-blur replays as it grows.
+          tail === ''
+            ? null
+            : h('div', { className: 'dsh-op-runStream' },
+              // `key` changes with the text so the animation restarts on every delta
+              // instead of running once and leaving the added words unanimated.
+              h('div', { key: tail.slice(-24), className: 'dsh-op-runText' }, tail)),
+          tool === null
+            ? null
+            : h('div', { className: 'dsh-op-runTool' },
+              h('span', { className: 'dsh-op-runToolName' }, tool.name ?? 'tool'),
+              h('span', { className: 'dsh-op-runToolDetail' },
+                `${tool.summary ?? ''}${tool.text ? ` ${tool.text}` : ''}`)),
           failed ? h('div', { className: 'dsh-op-runErr' }, String(job.error)) : null))
     }
     // ── right-hand thinking window ──────────────────────────────────────────
