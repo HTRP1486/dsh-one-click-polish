@@ -691,10 +691,11 @@ window.__ModuleLoader__.load({
    that keeps a bad measurement from spanning the whole window again. */
 /* Fixed height, not max-height: the panel appears and stays the same size whether it
    holds one row or three, so its top edge does not jump while the run progresses.
+   236px fits the header, three rows and a two-line thought without scrolling the body.
    Width is capped lower than before — 480px reads as a card, 600 read as a slab. */
 .dsh-op-run{position:fixed;left:0;right:0;margin:0 auto;bottom:120px;z-index:1440;
   width:min(480px,calc(100vw - 64px));max-width:480px;
-  height:172px;display:flex;flex-direction:column;
+  height:236px;display:flex;flex-direction:column;
   border-radius:var(--dsw-radius-lg);background:var(--dsw-alias-bg-layer-2);
   border:.5px solid var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);
   color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;overflow:hidden;
@@ -727,17 +728,20 @@ window.__ModuleLoader__.load({
 .dsh-op-taskText{flex:none}
 .dsh-op-taskDetail{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;opacity:.7;text-align:right}
-/* The thought rides on the row doing the work, indented under its label. Two lines,
-   never more: the point is to watch the current sentence arrive, not to read a log.
-   The blur-to-clear fade replays on every delta because the node is re-keyed, so new
-   words settle in instead of popping. filter and opacity only, so it stays on the
-   compositor and streaming does not stutter. */
-.dsh-op-taskStream{padding:2px 0 0 21px;white-space:pre-wrap;word-break:break-word;
+/* The thought rides on the row doing the work, indented under its label.
+   Exactly two lines tall, clipped: the newest words stay on screen and older ones
+   leave upward, so a long paragraph never grows the row. overflow is hidden but the
+   box is still programmatically scrollable, which is how it is pinned to the bottom.
+   The blur-to-clear fade plays once when the thought starts; after that the
+   character-by-character reveal carries the motion. */
+.dsh-op-taskStream{display:block;box-sizing:border-box;
+  margin:2px 0 0 21px;padding:0;height:36px;overflow:hidden;
+  white-space:pre-wrap;word-break:break-word;
   color:var(--dsw-alias-label-secondary);font-size:11.5px;line-height:18px;
   animation:dsh-op-stream-in .42s cubic-bezier(.16,1,.3,1) both}
 @keyframes dsh-op-stream-in{
-  from{opacity:0;filter:blur(4px);transform:translateY(3px)}
-  to{opacity:.92;filter:blur(0);transform:translateY(0)}
+  from{opacity:0;filter:blur(4px)}
+  to{opacity:.92;filter:blur(0)}
 }
 /* File activity reads as its own quiet line, not a task: it is evidence, not a step. */
 .dsh-op-runTool{display:flex;align-items:baseline;gap:8px;margin-top:6px;
@@ -2220,6 +2224,62 @@ window.__ModuleLoader__.load({
       }, [intervalMs])
       return box
     }
+    // ── streaming thought ───────────────────────────────────────────────────
+    /**
+     * One thought, revealed a character at a time.
+     *
+     * The text arrives in chunks (a whole clause every poll), and painting each chunk
+     * whole made the panel jump. This walks a cursor toward the end instead, so the
+     * sentence types itself out. The step scales with how far behind it is: a few
+     * characters per frame when nearly caught up, a bigger stride when a burst lands,
+     * so it never lags behind the stream.
+     *
+     * The box is a fixed two lines tall and scrolled to the bottom, so the newest words
+     * are always the ones on screen and the older ones leave upward.
+     */
+    function ThoughtStream({ text }) {
+      const [shown, setShown] = useState(0)
+      const boxRef = useRef(null)
+      const frameRef = useRef(0)
+      // rAF is the right tick in a browser; the fallback keeps this component usable
+      // in a render-only environment instead of throwing on an undefined global.
+      const nextFrame = typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame
+        : callback => setTimeout(callback, 16)
+      const stopFrame = typeof cancelAnimationFrame === 'function'
+        ? cancelAnimationFrame
+        : id => clearTimeout(id)
+
+      useEffect(() => {
+        // A new or shorter thought starts again; otherwise keep the cursor and catch up.
+        setShown(previous => (previous > text.length ? 0 : previous))
+        let cancelled = false
+        const step = () => {
+          if (cancelled) return
+          setShown(previous => {
+            if (previous >= text.length) return previous
+            const behind = text.length - previous
+            // 1 char when close, up to 6 when a burst arrives — fast but never instant.
+            return previous + Math.max(1, Math.min(6, Math.ceil(behind / 4)))
+          })
+          frameRef.current = nextFrame(step)
+        }
+        frameRef.current = nextFrame(step)
+        return () => {
+          cancelled = true
+          stopFrame(frameRef.current)
+        }
+      }, [text])
+
+      // Pin to the bottom so the newest line stays visible as older ones scroll away.
+      useEffect(() => {
+        const node = boxRef.current
+        if (node !== null) node.scrollTop = node.scrollHeight
+      })
+
+      return h('span', { className: 'dsh-op-taskStream', ref: boxRef },
+        text.slice(0, shown))
+    }
     // ── run panel: 润色 / 扩写, above the composer ────────────────────────────
     /**
      * The process of a one-shot 润色 or 扩写, drawn above the composer.
@@ -2363,11 +2423,7 @@ window.__ModuleLoader__.load({
         // visibly doing the work often has no 'running' state yet, and the panel showed
         // an empty row for the whole opening round.
         const streamNode = stream !== undefined && stream !== ''
-          ? h('span', {
-            // Re-keyed on the text so the blur-to-clear animation replays per delta.
-            key: 'stream-' + stream.slice(-20),
-            className: 'dsh-op-taskStream',
-          }, stream)
+          ? h(ThoughtStream, { text: stream })
           : null
         return h('div', {
           key: id,
