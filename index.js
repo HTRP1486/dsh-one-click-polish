@@ -1446,6 +1446,10 @@ async function progressRoute(req, res) {
       id: job.id,
       mode: job.mode,
       research: job.research,
+      // The owning session travels with the payload so a browser showing another
+      // session can ignore a run it does not own. Without it the steps appeared in
+      // whichever conversation was open, and a new session showed a live spinner.
+      sessionId: job.sessionId,
       done: job.done,
       error: job.error,
       steps: job.steps.map(step => ({ ...step })),

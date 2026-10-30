@@ -207,7 +207,15 @@ window.__ModuleLoader__.load({
           const payload = await response.json().catch(() => null)
           const job = payload?.job
           if (job !== null && job !== undefined && jobState !== null && jobState.id === id) {
-            publishJob({ ...jobState, steps: job.steps, done: job.done, error: job.error })
+            publishJob({
+              ...jobState,
+              steps: job.steps,
+              done: job.done,
+              error: job.error,
+              // Keep the owner on the client copy so the turn-tail can skip a run
+              // that belongs to another conversation.
+              sessionId: typeof job.sessionId === 'string' ? job.sessionId : jobState.sessionId,
+            })
             if (job.done === true) {
               stopped = true
               return
@@ -1296,7 +1304,7 @@ window.__ModuleLoader__.load({
         setLastMode(mode)
         setNotice(mode === 'expand' ? t('working.expand') : t('working'))
         const requestId = `j${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`
-        publishJob({ id: requestId, mode, steps: [], done: false, error: null, collapsed: false })
+        publishJob({ id: requestId, mode, steps: [], done: false, error: null, collapsed: false, sessionId: String(sessionId) })
         const stopWatch = watchJob(requestId)
         const abort = typeof AbortController === 'function' ? new AbortController() : undefined
         activeAbort = abort ?? null
@@ -1884,9 +1892,15 @@ window.__ModuleLoader__.load({
      * list with no replace risk, so the steps land where the reader already is
      * instead of in a floating panel over the sidebar.
      */
-    function TurnSteps({ t }) {
+    function TurnSteps({ t, sessionId }) {
       const job = useJob()
       if (job === null || Array.isArray(job.steps) === false || job.steps.length === 0) return null
+      // The job store is module-wide, so a run started in one conversation must not
+      // draw rows in another. Without this the steps appeared in whichever session
+      // was open, and a brand-new session showed a live spinner for work it did not
+      // own. Older builds omit the field, in which case the row still shows.
+      if (typeof job.sessionId === 'string' && job.sessionId !== ''
+        && typeof sessionId === 'string' && String(sessionId) !== job.sessionId) return null
       // The job carries `done` and `error`; a running state is the absence of both.
       const failed = job.error !== null && job.error !== undefined
       const finished = job.done === true
