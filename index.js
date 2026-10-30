@@ -382,11 +382,15 @@ async function polishRoute(ctx, settings, req, res) {
   const agent = typeof body?.sessionId === 'string' && body.sessionId !== ''
     ? ctx.agents.get(body.sessionId)
     : undefined
+  // A fixed model still has to be an accepted pair, and its effort has to be one the
+  // model advertises: sending "on" to an adapter that has no effort control is a
+  // hard failure from the provider, not a fallback.
+  const fixedEffort = await supportedEffort(ctx, settings.provider, settings.model, settings.reasoningEffort)
   const selection = settings.modelSource === 'fixed' && settings.provider !== '' && settings.model !== ''
     ? {
       provider: settings.provider,
       model: settings.model,
-      ...(settings.reasoningEffort === '' ? {} : { reasoningEffort: settings.reasoningEffort }),
+      ...(fixedEffort === '' ? {} : { reasoningEffort: fixedEffort }),
     }
     : resolveSelection(ctx, agent)
   if (selection === undefined) {
@@ -1727,6 +1731,26 @@ async function settingsRoute(ctx, settings, req, res) {
  * settings page hide the control instead of offering efforts the adapter would
  * reject at dispatch.
  */
+/**
+ * The effort to send for a provider/model pair, or an empty string to omit it.
+ *
+ * Only efforts the adapter advertises are acceptable; any other value makes the
+ * request fail outright. A model with no effort list takes none, and an adapter that
+ * cannot be resolved is treated the same way — omitting the field is always safe.
+ */
+async function supportedEffort(ctx, provider, model, wanted) {
+  if (wanted === '' || provider === '' || model === '') return ''
+  try {
+    const info = await withTimeout(ctx.llm.resolveModelInfo(provider, model), 3000)
+    const efforts = info?.reasoning?.efforts ?? []
+    const ids = efforts.map(effort => String(effort.id))
+    if (ids.length === 0) return ''
+    return ids.includes(wanted) ? wanted : ''
+  } catch {
+    // An adapter that will not answer gets no effort field.
+    return ''
+  }
+}
 async function effortsRoute(ctx, req, res) {
   const url = new URL(req.url ?? '/', 'http://localhost')
   const provider = url.searchParams.get('provider') ?? ''
