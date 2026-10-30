@@ -2255,6 +2255,10 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         // A new or shorter thought starts again; otherwise keep the cursor and catch up.
         setShown(previous => (previous > text.length ? 0 : previous))
+        // Three of these boxes are always mounted, but only the working row has text.
+        // Starting a frame loop for an empty one would tick 60 times a second for
+        // nothing.
+        if (text === '') return undefined
         let cancelled = false
         const step = () => {
           if (cancelled) return
@@ -2437,13 +2441,11 @@ window.__ModuleLoader__.load({
           detail === undefined || detail === '' ? null
             : h('span', { className: 'dsh-op-taskDetail' }, detail),
         ]
-        // The thought is drawn whenever one was handed in. Gating it on `running` was
-        // wrong: a step stays 'pending' until its phase reports back, so the row that is
-        // visibly doing the work often has no 'running' state yet, and the panel showed
-        // an empty row for the whole opening round.
-        const streamNode = stream !== undefined && stream !== ''
-          ? h(ThoughtStream, { text: stream })
-          : null
+        // The thought slot is always rendered, even with nothing to say. Every row
+        // reserves its two lines whether or not it is the one working, so the rows sit
+        // at fixed positions and nothing shifts as the thought moves from the lookup
+        // row to the rewrite row.
+        const streamNode = h(ThoughtStream, { text: typeof stream === 'string' ? stream : '' })
         return h('div', {
           key: id,
           className: 'dsh-op-task',
