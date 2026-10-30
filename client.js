@@ -212,6 +212,10 @@ window.__ModuleLoader__.load({
               steps: job.steps,
               done: job.done,
               error: job.error,
+              // The trace is what the process panel renders: reasoning deltas and
+              // tool calls, with live rows growing in place. Without it here the
+              // panel would only see the archived copy after the run settled.
+              trace: Array.isArray(job.trace) ? job.trace : jobState.trace,
               // Keep the owner on the client copy so the turn-tail can skip a run
               // that belongs to another conversation.
               sessionId: typeof job.sessionId === 'string' ? job.sessionId : jobState.sessionId,
@@ -222,7 +226,9 @@ window.__ModuleLoader__.load({
             }
           }
         } catch { /* transient; keep polling */ }
-        if (!stopped) setTimeout(tick, 400)
+        // 200ms: reasoning arrives as deltas and the panel is meant to look live.
+        // A slower tick made streaming text appear in visible jumps.
+        if (!stopped) setTimeout(tick, 200)
       }
       tick()
       return () => { stopped = true }
@@ -873,19 +879,26 @@ window.__ModuleLoader__.load({
 .dsh-op-traceRow[data-kind="sent"] .dsh-op-traceTag{color:var(--dsw-alias-state-success-primary)}
 .dsh-op-traceRow[data-kind="conclusion"] .dsh-op-traceTag{color:var(--dsw-alias-state-warn-primary)}
 .dsh-op-traceText{white-space:pre-wrap;word-break:break-word;opacity:.9}
-.dsh-op-think{position:fixed;top:64px;right:16px;z-index:1400;width:300px;max-width:38vw;
-  max-height:min(420px,60vh);display:flex;flex-direction:column;border-radius:var(--dsw-radius-panel);
-  background:var(--dsw-alias-bg-layer-2);border:.5px solid var(--dsw-alias-border-l2);
+/* Above the composer, centred: the panel reports on the run the button just
+   started, so it belongs where the eye already is. A fixed right-edge dock made it
+   read as a separate monitor and put it far from the button that opened it.
+   bottom:132px clears the composer (which is one row tall plus its toolbar); the
+   width tracks the composer so the two look like one stack. */
+.dsh-op-think{position:fixed;left:50%;bottom:132px;transform:translateX(-50%);z-index:1400;
+  width:min(560px,calc(100vw - 64px));max-width:calc(100vw - 64px);
+  max-height:min(380px,50vh);display:flex;flex-direction:column;border-radius:var(--dsw-radius-panel);
+  background:var(--dsw-alias-bg-layer-1);border:.5px solid var(--dsw-alias-border-l2);
   --dsw-elevation-stroke-color:var(--dsw-alias-border-l1);
   box-shadow:var(--dsw-elevation-prominent);color:var(--dsw-alias-label-primary);
   font-size:12px;line-height:17px;overflow:hidden;
-  /* Slides in from the right edge instead of appearing whole, and collapses with
-     a height transition so opening and folding both read as the same object. */
+  /* Rises into place instead of sliding in from a side edge. */
   animation:dsh-op-think-in .2s cubic-bezier(.22,1,.36,1) both;
   transition:max-height .18s ease}
+/* The keyframes must keep the centring translate, otherwise the panel jumps to the
+   left edge while the animation runs. */
 @keyframes dsh-op-think-in{
-  from{opacity:0;transform:translateX(18px) scale(.985)}
-  to{opacity:1;transform:translateX(0) scale(1)}
+  from{opacity:0;transform:translateX(-50%) translateY(12px) scale(.985)}
+  to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}
 }
 @media (prefers-reduced-motion:reduce){
   .dsh-op-think{animation:none;transition:none}
@@ -1306,6 +1319,10 @@ window.__ModuleLoader__.load({
         setNotice(mode === 'expand' ? t('working.expand') : t('working'))
         const requestId = `j${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`
         publishJob({ id: requestId, mode, steps: [], done: false, error: null, collapsed: false, sessionId: String(sessionId) })
+        // Open the process panel for this run: the same window the autopilot uses,
+        // now driven by the live job trace, so 思考 and tool calls stream instead of
+        // arriving only when the whole request settles.
+        publishThink({ open: true, sessionId: String(sessionId) })
         const stopWatch = watchJob(requestId)
         const abort = typeof AbortController === 'function' ? new AbortController() : undefined
         activeAbort = abort ?? null
@@ -1948,11 +1965,22 @@ window.__ModuleLoader__.load({
       const openRows = openRowsRef.current
       const [, setFoldTick] = useState(0)
 
-      // Follow the session's live run while the window is open. Only this
-      // conversation's own log is shown: an empty list is the honest state for a
-      // chat that has not run the autopilot yet.
+      // Follow the run that is happening now, and fall back to this session's
+      // archived log when nothing is live. The live job's trace is what makes the
+      // panel show reasoning as it streams: its rows carry `live` and grow in place,
+      // while `/runs` only holds what a finished run already settled.
+      const liveJob = useJob()
       useEffect(() => {
         if (think.open !== true || think.sessionId === null) return undefined
+        // A job that belongs to this conversation is already streaming its trace,
+        // so polling the archive would only show a staler copy of the same run.
+        if (liveJob !== null && Array.isArray(liveJob.trace)
+          && (liveJob.sessionId === undefined || liveJob.sessionId === ''
+            || String(liveJob.sessionId) === String(think.sessionId))) {
+          setEntries(liveJob.trace.slice(-300))
+          setStatus('ready')
+          return undefined
+        }
         let cancelled = false
         const tick = async () => {
           try {
@@ -1968,11 +1996,12 @@ window.__ModuleLoader__.load({
             if (!cancelled) setStatus('error')
           }
           // Half-second polling: a streaming row should look like it is moving.
+          // Archive polling only: the live path above does not reach here.
           if (!cancelled) setTimeout(tick, 500)
         }
         tick()
         return () => { cancelled = true }
-      }, [think.open, think.sessionId])
+      }, [think.open, think.sessionId, liveJob])
 
       // Keep the newest entry in view unless the user scrolled up to read.
       useEffect(() => {

@@ -298,7 +298,7 @@ function unwrapFence(output, input) {
  * marked as loop-built, so no listener assumes it can be reconstructed from a
  * Session log, and nothing is appended to the Session.
  */
-async function runModel(ctx, selection, input, system, signal) {
+async function runModel(ctx, selection, input, system, signal, job) {
   const options = {
     provider: selection.provider,
     model: selection.model,
@@ -308,23 +308,38 @@ async function runModel(ctx, selection, input, system, signal) {
     signal,
   }
 
+  // The rewrite is the long wait. Its reasoning is streamed into the trace so the
+  // panel shows what the model is thinking while it thinks, instead of a spinner
+  // next to a label for half a minute.
+  const liveRow = job === undefined || job === null
+    ? -1
+    : beginLive(job, { kind: 'round', round: 99, reasoning: '', text: '', live: true })
+
   const once = async () => {
     let output = ''
+    let reasoning = ''
     let finish
     for await (const chunk of ctx.llm.stream(options)) {
-      if (chunk?.type === 'text-delta' && typeof chunk.text === 'string') output += chunk.text
-      else if (chunk?.type === 'finish') finish = chunk.reason
+      if (chunk?.type === 'text-delta' && typeof chunk.text === 'string') {
+        output += chunk.text
+        if (liveRow >= 0) updateLive(job, liveRow, { text: output.trim().slice(0, 1200) })
+      } else if (chunk?.type === 'reasoning-delta' && typeof chunk.text === 'string') {
+        reasoning += chunk.text
+        if (liveRow >= 0) updateLive(job, liveRow, { reasoning: reasoning.trim().slice(0, 1200) })
+      } else if (chunk?.type === 'finish') finish = chunk.reason
     }
-    return { output, finish }
+    return { output, finish, reasoning }
   }
 
-  let { output, finish } = await once()
+  let { output, finish, reasoning } = await once()
   // Providers occasionally answer with reasoning only. One retry is cheap next
   // to losing the whole click, and it is only done when the stream itself
   // reported success.
   if (output.trim() === '' && finish?.kind === 'stop') {
-    ;({ output, finish } = await once())
+    ;({ output, finish, reasoning } = await once())
   }
+
+  if (liveRow >= 0) updateLive(job, liveRow, { live: false, reasoning: reasoning.trim().slice(0, 3000) })
 
   // Adapter failures arrive as a terminal chunk, not as a throw.
   if (finish?.kind === 'aborted') throw new Error('润色请求已中止（超时或被取消）')
@@ -462,7 +477,7 @@ async function produceRewrite(ctx, settings, mode, strength, research, input, ag
   if (findings !== '') parts.push(RESEARCH_NOTE, `参考资料（AI 检索所得）:\n${findings}`)
   const system = parts.join('\n\n')
 
-  const text = await runModel(ctx, selection, input, system, controller.signal)
+  const text = await runModel(ctx, selection, input, system, controller.signal, job)
   markStep(job, 'rewrite', 'done')
   return text
 }
