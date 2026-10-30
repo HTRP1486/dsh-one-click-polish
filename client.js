@@ -729,15 +729,19 @@ window.__ModuleLoader__.load({
 .dsh-op-taskDetail{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;opacity:.7;text-align:right}
 /* The thought rides on the row doing the work, indented under its label.
-   Exactly two lines tall, clipped: the newest words stay on screen and older ones
-   leave upward, so a long paragraph never grows the row. overflow is hidden but the
-   box is still programmatically scrollable, which is how it is pinned to the bottom.
-   The box itself does not animate — the blur belongs to the characters that are
-   arriving, see .dsh-op-fresh. */
+   Exactly two lines tall with the overflow clipped, so a long paragraph never grows the
+   row. The content inside is translated up by the measured overhang with a transition,
+   which makes it roll out of the top like a scrolling log — clipping alone made the text
+   vanish with no motion. The box itself does not animate: the blur belongs to the
+   characters that are arriving, see .dsh-op-fresh. */
 .dsh-op-taskStream{display:block;box-sizing:border-box;
   margin:2px 0 0 21px;padding:0;height:36px;overflow:hidden;
   white-space:pre-wrap;word-break:break-word;
   color:var(--dsw-alias-label-secondary);font-size:11.5px;line-height:18px}
+/* The roll. Short and eased so it reads as motion rather than a jump, and it restarts
+   on each growth, which is what makes a burst look like it slides. */
+.dsh-op-taskStreamInner{display:block;
+  transition:transform .26s cubic-bezier(.16,1,.3,1);will-change:transform}
 /* The newest characters, re-mounted as each one lands, so the blur-to-clear rides the
    typing instead of playing once on mount and finishing before any text exists. */
 .dsh-op-fresh{animation:dsh-op-fresh .34s cubic-bezier(.16,1,.3,1) both}
@@ -2236,12 +2240,14 @@ window.__ModuleLoader__.load({
      * characters per frame when nearly caught up, a bigger stride when a burst lands,
      * so it never lags behind the stream.
      *
-     * The box is a fixed two lines tall and scrolled to the bottom, so the newest words
-     * are always the ones on screen and the older ones leave upward.
+     * The box is a fixed two lines tall and the content inside is translated up as it
+     * grows, so the newest words are always the ones on screen and the older ones roll
+     * out of the top.
      */
     function ThoughtStream({ text }) {
       const [shown, setShown] = useState(0)
       const boxRef = useRef(null)
+      const innerRef = useRef(null)
       const frameRef = useRef(0)
       // rAF is the right tick in a browser; the fallback keeps this component usable
       // in a render-only environment instead of throwing on an undefined global.
@@ -2277,10 +2283,16 @@ window.__ModuleLoader__.load({
         }
       }, [text])
 
-      // Pin to the bottom so the newest line stays visible as older ones scroll away.
+      // Roll the content up instead of snapping it. Measuring the overhang and
+      // translating by it, with a CSS transition on the transform, makes the text slide
+      // out of the top as new lines arrive — the same read as a scrolling log, without
+      // a scrollbar. Setting scrollTop would jump in one frame and show nothing.
       useEffect(() => {
-        const node = boxRef.current
-        if (node !== null) node.scrollTop = node.scrollHeight
+        const box = boxRef.current
+        const inner = innerRef.current
+        if (box === null || inner === null) return
+        const overhang = Math.max(0, inner.scrollHeight - box.clientHeight)
+        inner.style.transform = overhang > 0 ? `translateY(-${overhang}px)` : 'translateY(0)'
       })
 
       // Only the newest few characters are wrapped in an animated span. Its key moves
@@ -2295,13 +2307,14 @@ window.__ModuleLoader__.load({
       const fresh = visible.slice(cut)
 
       return h('span', { className: 'dsh-op-taskStream', ref: boxRef },
-        settled,
-        fresh === ''
-          ? null
-          : h('span', {
-            key: 'fresh-' + cut + '-' + fresh.length,
-            className: 'dsh-op-fresh',
-          }, fresh))
+        h('span', { className: 'dsh-op-taskStreamInner', ref: innerRef },
+          settled,
+          fresh === ''
+            ? null
+            : h('span', {
+              key: 'fresh-' + cut + '-' + fresh.length,
+              className: 'dsh-op-fresh',
+            }, fresh)))
     }
     // ── run panel: 润色 / 扩写, above the composer ────────────────────────────
     /**
