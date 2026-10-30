@@ -84,6 +84,26 @@ window.__ModuleLoader__.load({
      * table while the request is in flight. `null` means no panel at all.
      */
     /** Right-hand thinking window: open state and the session it follows. */
+    /** Expand result card: one at a time, rendered by the frame-wide overlay. */
+    let expandCardState = null
+    const expandCardListeners = new Set()
+
+    function publishExpandCard(next) {
+      expandCardState = next
+      for (const listener of expandCardListeners) listener()
+    }
+
+    function useExpandCard() {
+      const [value, setValue] = useState(expandCardState)
+      useEffect(() => {
+        const listener = () => setValue(expandCardState)
+        expandCardListeners.add(listener)
+        listener()
+        return () => { expandCardListeners.delete(listener) }
+      }, [])
+      return value
+    }
+
     let thinkState = { open: false, sessionId: null }
     const thinkListeners = new Set()
 
@@ -235,6 +255,9 @@ window.__ModuleLoader__.load({
         'job.title.polish': '润色中',
         'job.title.expand': '扩写中',
         'job.done': '完成',
+        'job.expanding': '扩写中',
+        'job.polishing': '润色中',
+        'job.label': '润色步骤',
         'job.failed': '失败',
         'job.hide': '收起',
         'job.cancel': '取消这次操作',
@@ -290,6 +313,9 @@ window.__ModuleLoader__.load({
         'version.how': '怎么更新',
         'version.recheck': '重新检查',
         'version.updateHint': '卸载后按包名重装即可更新（dsh 不为第三方插件提供更新按钮）',
+        'expand.card.title': '扩写结果',
+        'expand.card.apply': '写入输入框',
+        'expand.card.discard': '丢弃',
         'settings.explore': '检索预算',
         'settings.explore.hint': '标准/深度润色时会先查资料。这是查资料总共能用多久、最多查几轮。查完后再改写，两者互不占用。',
         'settings.explore.unit': '秒',
@@ -402,6 +428,9 @@ window.__ModuleLoader__.load({
         'job.title.polish': 'Polishing',
         'job.title.expand': 'Expanding',
         'job.done': 'Done',
+        'job.expanding': 'Expanding',
+        'job.polishing': 'Polishing',
+        'job.label': 'Polish steps',
         'job.failed': 'Failed',
         'job.hide': 'Collapse',
         'job.cancel': 'Cancel this run',
@@ -457,6 +486,9 @@ window.__ModuleLoader__.load({
         'version.how': 'How to update',
         'version.recheck': 'Check again',
         'version.updateHint': 'Uninstall and install by package name to update (dsh offers no update button for third-party plugins)',
+        'expand.card.title': 'Expanded brief',
+        'expand.card.apply': 'Put in composer',
+        'expand.card.discard': 'Discard',
         'settings.explore': 'Lookup budget',
         'settings.explore.hint': 'A standard or deep polish looks things up first. This is how long that may take in total, and how many rounds it may spend. The rewrite runs separately with its own budget.',
         'settings.explore.unit': 's',
@@ -595,6 +627,40 @@ window.__ModuleLoader__.load({
 .dsh-op-versionBad{color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));opacity:.8}
 /* The manual update instruction: present when a newer version exists, quiet enough
    not to compete with the version numbers themselves. */
+/* Expand result card: centred above the composer, wide enough for prose, with
+   the body scrolling instead of the card growing past the viewport. */
+
+/* Step rows inside the conversation turn: they read as part of the reply, so no
+   card, no shadow — just a small head and one row per step. */
+.dsh-op-steps{margin:10px 0 2px;padding:0;font-size:12px;line-height:18px;
+  color:var(--dsw-alias-label-secondary)}
+.dsh-op-stepsHead{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.dsh-op-stepsTitle{font-weight:500;color:var(--dsw-alias-label-primary)}
+.dsh-op-stepsSpin{display:inline-block;animation:dsh-op-spin 1s linear infinite}
+.dsh-op-stepRow{display:flex;align-items:baseline;gap:7px;padding:1px 0}
+.dsh-op-stepRow[data-state="done"],.dsh-op-stepRow[data-state="running"]{
+  color:var(--dsw-alias-label-primary)}
+.dsh-op-stepRow[data-state="error"]{color:var(--dsw-alias-state-error-primary)}
+.dsh-op-stepDot{flex:none;width:12px;text-align:center;font-size:11px}
+.dsh-op-stepText{flex:none}
+.dsh-op-stepDetail{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;opacity:.75}
+.dsh-op-stepError{margin-top:6px;font-size:11px;color:var(--dsw-alias-state-error-primary)}
+@media (prefers-reduced-motion:reduce){.dsh-op-stepsSpin{animation:none}}
+.dsh-op-expand{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);z-index:1450;
+  width:min(560px,calc(100vw - 64px));max-height:min(420px,55vh);display:flex;flex-direction:column;
+  border-radius:var(--dsw-radius-panel);background:var(--dsw-alias-bg-layer-1);
+  border:.5px solid var(--dsw-alias-border-l2);box-shadow:var(--dsw-elevation-prominent);
+  color:var(--dsw-alias-label-primary);font-size:12.5px;line-height:19px;
+  animation:dsh-op-pop-in .17s cubic-bezier(.22,1,.36,1) both}
+.dsh-op-expandHead{display:flex;align-items:center;gap:8px;padding:10px 12px;flex:none;
+  border-bottom:1px solid var(--dsw-alias-border-l1)}
+.dsh-op-expandTitle{flex:1;font-size:13px;font-weight:600}
+.dsh-op-expandBody{flex:1;min-height:0;overflow-y:auto;padding:12px;
+  white-space:pre-wrap;word-break:break-word;user-select:text}
+.dsh-op-expandFoot{display:flex;align-items:center;gap:8px;padding:10px 12px;flex:none;
+  border-top:1px solid var(--dsw-alias-border-l1)}
+@media (prefers-reduced-motion:reduce){.dsh-op-expand{animation:none}}
 .dsh-op-versionHint{flex:1 1 100%;font-size:11px;line-height:16px;
   color:var(--dsw-alias-label-secondary);opacity:.85}
 /* The busy-wait line: a live counter, so it is monospaced and does not reflow as
@@ -767,35 +833,6 @@ window.__ModuleLoader__.load({
    its upper half — the progress window hid the navigation it was reporting about.
    Right of the content column is empty until the thinking window appears, and the
    two stack cleanly: 12px vs 64px from the same edge. */
-.dsh-op-job{position:fixed;top:12px;right:16px;z-index:1500;width:300px;box-sizing:border-box;
-  padding:12px 14px;border-radius:var(--dsw-radius-panel);pointer-events:auto;
-  background:var(--dsw-alias-bg-layer-2);border:.5px solid var(--dsw-alias-border-l2);
-  --dsw-elevation-stroke-color:var(--dsw-alias-border-l1);
-  box-shadow:var(--dsw-elevation-prominent);color:var(--dsw-alias-label-primary);
-  font-size:12px;line-height:18px}
-.dsh-op-job--mini{width:auto;max-width:260px;padding:6px 12px;border-radius:999px;
-  display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:12px}
-.dsh-op-job--mini[data-state="done"]{color:var(--dsw-alias-state-success-primary)}
-.dsh-op-job--mini[data-state="error"]{color:var(--dsw-alias-state-error-primary)}
-.dsh-op-jobMiniText{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dsh-op-jobHead{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.dsh-op-jobTitle{flex:1;font-size:13px;font-weight:500}
-.dsh-op-job[data-state="error"] .dsh-op-jobTitle{color:var(--dsw-alias-state-error-primary)}
-.dsh-op-job[data-state="done"] .dsh-op-jobTitle{color:var(--dsw-alias-state-success-primary)}
-.dsh-op-jobHide{border:none;background:transparent;color:var(--dsw-alias-label-secondary);
-  cursor:pointer;font-size:14px;line-height:1;padding:2px 6px;border-radius:6px}
-.dsh-op-jobHide:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
-.dsh-op-jobBar{height:4px;border-radius:2px;background:var(--dsw-alias-bg-layer-2);overflow:hidden;margin-bottom:10px}
-.dsh-op-jobFill{height:100%;background:var(--dsw-alias-brand-primary);transition:width .3s ease}
-.dsh-op-jobSteps{display:flex;flex-direction:column;gap:6px}
-.dsh-op-jobStep{display:flex;align-items:baseline;gap:6px;color:var(--dsw-alias-label-secondary)}
-.dsh-op-jobStep[data-state="done"],.dsh-op-jobStep[data-state="running"]{color:var(--dsw-alias-label-primary)}
-.dsh-op-jobStep[data-state="error"]{color:var(--dsw-alias-state-error-primary)}
-.dsh-op-jobDot{flex:none;width:14px;text-align:center;font-size:11px}
-.dsh-op-jobText{flex:none}
-.dsh-op-jobDetail{margin-left:auto;max-width:55%;overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap;font-size:11px;color:var(--dsw-alias-label-secondary)}
-.dsh-op-jobError{margin-top:8px;font-size:11px;line-height:16px;color:var(--dsw-alias-state-error-primary)}
 .dsh-op-auto{position:relative;display:inline-flex;flex:none}
 .dsh-op-pop{position:absolute;bottom:calc(100% + 8px);right:0;z-index:1200;width:288px;
   display:flex;flex-direction:column;gap:8px;padding:8px;border-radius:var(--dsw-radius-panel);
@@ -1006,6 +1043,8 @@ window.__ModuleLoader__.load({
       const [autoTrace, setAutoTrace] = useState(null)
       const [resumable, setResumable] = useState(null)
       const [starting, setStarting] = useState(false)
+      // Expand result shown as a card before it replaces the draft.
+      const expandCard = useExpandCard()
       const think = useThink()
       const pilotTimer = useRef(null)
 
@@ -1307,6 +1346,13 @@ window.__ModuleLoader__.load({
             return
           }
           report('setDraft', { mode, len: next.length })
+            // An expansion is several paragraphs; dropping it straight into the
+            // composer hides what it actually wrote. Show it, let the user apply.
+            if (mode === 'expand') {
+              publishExpandCard({ text: next, source, at: Date.now() })
+              flash('done', t('done.expand'), mode)
+              return
+            }
           inputActions.setDraft(next)
           setTimeout(() => report('after', {
             draftLen: typeof draftRef.current === 'string' ? draftRef.current.length : -1,
@@ -1794,132 +1840,78 @@ window.__ModuleLoader__.load({
             : null))
     }
 
+    // ── expand result card ─────────────────────────────────────────────────
+    /**
+     * What 扩写 produced, shown before it touches the draft.
+     *
+     * Polishing rewrites one line in place, so overwriting the composer is the whole
+     * point. Expanding turns a wish into several paragraphs, and dropping that into
+     * the composer hides both what it wrote and the fact that it discarded the wish.
+     * The card gives the user a look and an explicit 写入 step.
+     */
+    function ExpandCard({ t, inputActions }) {
+      const card = useExpandCard()
+      if (card === null) return null
+      const apply = () => {
+        inputActions.setDraft(card.text)
+        publishExpandCard(null)
+      }
+      return h('div', { className: 'dsh-op-expand' },
+        h('div', { className: 'dsh-op-expandHead' },
+          h('span', { className: 'dsh-op-expandTitle' }, t('expand.card.title')),
+          h('button', {
+            type: 'button',
+            className: 'dsh-op-thinkBtn',
+            title: t('expand.card.discard'),
+            onClick: () => publishExpandCard(null),
+          }, '✕')),
+        h('div', { className: 'dsh-op-expandBody' }, card.text),
+        h('div', { className: 'dsh-op-expandFoot' },
+          h('button', { type: 'button', className: 'dsh-op-save', onClick: apply },
+            t('expand.card.apply')),
+          h('button', {
+            type: 'button',
+            className: 'dsh-op-link',
+            onClick: () => publishExpandCard(null),
+          }, t('expand.card.discard'))))
+    }
+    // ── in-conversation step rows ───────────────────────────────────────────
+    /**
+     * The job's steps, drawn at the end of the current turn.
+     *
+     * dsh renders its own tool calls as chat nodes, and a plugin cannot borrow that
+     * renderer without shadowing it. `conversation.chat.turnTail` is an additive
+     * list with no replace risk, so the steps land where the reader already is
+     * instead of in a floating panel over the sidebar.
+     */
+    function TurnSteps({ t }) {
+      const job = useJob()
+      if (job === null || Array.isArray(job.steps) === false || job.steps.length === 0) return null
+      // The job carries `done` and `error`; a running state is the absence of both.
+      const failed = job.error !== null && job.error !== undefined
+      const finished = job.done === true
+      const mode = job.mode === 'expand' ? 'expand' : 'polish'
+      const label = finished
+        ? (failed ? t('job.failed') : t('job.done'))
+        : t(mode === 'expand' ? 'job.expanding' : 'job.polishing')
+      return h('div', { className: 'dsh-op-steps' },
+        h('div', { className: 'dsh-op-stepsHead' },
+          h('span', { className: 'dsh-op-stepsTitle' }, label),
+          finished ? null : h('span', { className: 'dsh-op-stepsSpin' }, '⟳')),
+        job.steps.map((step, index) => h('div', {
+          key: String(index),
+          className: 'dsh-op-stepRow',
+          'data-state': step.state ?? 'running',
+        },
+        h('span', { className: 'dsh-op-stepDot' },
+          step.state === 'done' ? '✓' : step.state === 'error' ? '✕' : '◐'),
+        h('span', { className: 'dsh-op-stepText' }, step.text ?? ''),
+        step.detail === undefined ? null
+          : h('span', { className: 'dsh-op-stepDetail' }, step.detail))),
+        failed ? h('div', { className: 'dsh-op-stepError' }, String(job.error)) : null)
+    }
     // ── progress panel ──────────────────────────────────────────────────────
     /**
-     * The floating job window: what the action is doing right now, step by step.
-     *
-     * It sits in the frame-wide overlay so it survives the composer re-rendering
-     * under it, and it collapses to a one-line pill — the user asked to be able
-     * to get it out of the way without losing the fact that work is running.
-     */
-    function ProgressPanel({ t }) {
-      const job = useJob()
-      const confirm = useConfirm()
-
-      // The autopilot confirmation shares this frame-wide seat. Rendering it
-      // here rather than inside the composer keeps its backdrop over the screen
-      // and off the harness's own dialogs.
-      const dialog = confirm === null
-        ? null
-        : h('div', {
-          className: 'dsh-op-modal',
-          role: 'dialog',
-          'aria-modal': 'true',
-          // The backdrop cancels; the card stops the event, so a click inside
-          // it never reaches this handler.
-          onMouseDown: event => {
-            if (event.target === event.currentTarget) publishConfirm(null)
-          },
-        },
-        h('div', {
-          className: 'dsh-op-modalCard',
-          onMouseDown: event => event.stopPropagation(),
-        },
-          h('div', { className: 'dsh-op-h2' }, confirm.title),
-          h('p', { className: 'dsh-op-sub' }, confirm.body),
-          h('div', { className: 'dsh-op-inline' },
-            h('button', {
-              type: 'button',
-              className: 'dsh-op-link',
-              onClick: () => publishConfirm(null),
-            }, confirm.cancelLabel),
-            h('button', {
-              type: 'button',
-              className: 'dsh-op-save',
-              onClick: () => {
-                // Close first: the action may itself open a new panel.
-                publishConfirm(null)
-                confirm.onConfirm()
-              },
-            }, confirm.confirmLabel))))
-
-      // The thinking window has its own visibility rule, so it must render even
-      // when no job and no dialog do — an early `return dialog` here would drop it
-      // and the right-hand window could never appear.
-      if (job === null) return h(React.Fragment, null, dialog, h(ThinkWindow, { t }))
-
-      const steps = job.steps ?? []
-      const total = steps.length === 0 ? 1 : steps.length
-      const finished = steps.filter(step => step.state === 'done' || step.state === 'skipped').length
-      const failed = job.error !== null && job.error !== undefined
-      const percent = job.done === true ? 100 : Math.round((finished / total) * 100)
-      const title = failed
-        ? t('job.failed')
-        : job.done === true
-          ? t('job.done')
-          : (job.mode === 'expand' ? t('job.title.expand') : t('job.title.polish'))
-
-      if (job.collapsed === true) {
-        return h('button', {
-          type: 'button',
-          className: 'dsh-op-job dsh-op-job--mini',
-          'data-state': failed ? 'error' : job.done === true ? 'done' : 'running',
-          title: t('job.expand'),
-          onClick: () => publishJob({ ...job, collapsed: false }),
-        },
-        h('span', { className: 'dsh-op-jobDot' }, failed ? '!' : job.done === true ? '✓' : '◐'),
-        h('span', { className: 'dsh-op-jobMiniText' }, `${title} ${finished}/${total}`))
-      }
-
-      const panel = h('div', {
-        className: 'dsh-op-job',
-        'data-state': failed ? 'error' : job.done === true ? 'done' : 'running',
-        role: 'status',
-        'aria-live': 'polite',
-      },
-      h('div', { className: 'dsh-op-jobHead' },
-        h('span', { className: 'dsh-op-jobTitle' }, title),
-        job.done === true
-          ? null
-          : h('button', {
-            type: 'button',
-            className: 'dsh-op-jobHide',
-            title: t('job.cancel'),
-            'aria-label': t('job.cancel'),
-            onClick: () => {
-              try {
-                if (activeAbort !== null) activeAbort.abort()
-              } catch { /* already finished */ }
-            },
-          }, '✕'),
-        h('button', {
-          type: 'button',
-          className: 'dsh-op-jobHide',
-          title: t('job.hide'),
-          'aria-label': t('job.hide'),
-          onClick: () => publishJob({ ...job, collapsed: true }),
-        }, '—')),
-      h('div', { className: 'dsh-op-jobBar' },
-        h('div', { className: 'dsh-op-jobFill', style: { width: `${percent}%` } })),
-      h('div', { className: 'dsh-op-jobSteps' },
-        steps.length === 0
-          ? h('div', { className: 'dsh-op-jobStep', 'data-state': 'running' },
-            h('span', { className: 'dsh-op-jobDot' }, '◐'),
-            h('span', null, t('job.step.rewrite')))
-          : steps.map(step => h('div', {
-            key: step.key,
-            className: 'dsh-op-jobStep',
-            'data-state': step.state,
-          },
-          h('span', { className: 'dsh-op-jobDot' }, glyphOf(step.state)),
-          h('span', { className: 'dsh-op-jobText' }, t(`job.step.${step.key}`)),
-          step.detail === '' || step.detail === undefined
-            ? null
-            : h('span', { className: 'dsh-op-jobDetail' }, step.detail)))),
-      failed ? h('div', { className: 'dsh-op-jobError' }, job.error) : null)
-
-      return h(React.Fragment, null, dialog, panel, h(ThinkWindow, { t }))
-    }
 
     // ── right-hand thinking window ──────────────────────────────────────────
     /**
@@ -2788,11 +2780,20 @@ window.__ModuleLoader__.load({
         label: () => t('settings.nav'),
       }, props => h(SettingsPage, { ...props, t })))
 
+
+      // Steps belong in the conversation, not in a panel over the sidebar.
+      ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
+        name: 'conversation.chat.turnTail',
+        id: 'one-click-polish-steps',
+        order: 40,
+        label: () => t('job.label'),
+      }, props => h(TurnSteps, { ...props, t })))
+      // The thinking window is the autopilot monitor; it stays in the overlay.
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({
         name: 'shell.overlay',
-        id: 'one-click-polish-progress',
-        order: 20,
-      }, props => h(ProgressPanel, { ...props, t })))
+        id: 'one-click-polish-think',
+        order: 21,
+      }, props => h(ThinkWindow, { ...props, t })))
     }
 
     exports.apply = apply
