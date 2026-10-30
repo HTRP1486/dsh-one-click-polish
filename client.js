@@ -648,42 +648,34 @@ window.__ModuleLoader__.load({
 /* Expand result card: centred above the composer, wide enough for prose, with
    the body scrolling instead of the card growing past the viewport. */
 
-/* Step rows inside the conversation turn: they read as part of the reply, so no
-   card, no shadow — just a small head and one row per step. */
-.dsh-op-steps{margin:10px 0 2px;padding:0;font-size:12px;line-height:18px;
-  color:var(--dsw-alias-label-secondary)}
-.dsh-op-stepsHead{display:flex;align-items:center;gap:6px;margin-bottom:6px}
-.dsh-op-stepsTitle{font-weight:500;color:var(--dsw-alias-label-primary)}
+/* Spinner shared by the run panel. The step-row styles that used to live here went
+   with TurnSteps: the conversation no longer prints the process a second time. */
 .dsh-op-stepsSpin{display:inline-block;animation:dsh-op-spin 1s linear infinite}
-.dsh-op-stepRow{display:flex;align-items:baseline;gap:7px;padding:1px 0}
-.dsh-op-stepRow[data-state="done"],.dsh-op-stepRow[data-state="running"]{
-  color:var(--dsw-alias-label-primary)}
-.dsh-op-stepRow[data-state="error"]{color:var(--dsw-alias-state-error-primary)}
-.dsh-op-stepDot{flex:none;width:12px;text-align:center;font-size:11px}
-.dsh-op-stepText{flex:none}
-.dsh-op-stepDetail{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;
-  white-space:nowrap;opacity:.75}
-.dsh-op-stepError{margin-top:6px;font-size:11px;color:var(--dsw-alias-state-error-primary)}
 @media (prefers-reduced-motion:reduce){.dsh-op-stepsSpin{animation:none}}
 /* The one-shot run panel: above the composer, narrower than the result card, and
    positioned higher so an expand result can appear under it without overlap. */
+/* Tall enough to read a reasoning paragraph without scrolling on every line: a
+   thinking model writes 4-6 sentences per step, and 240px cut them off mid-thought. */
 .dsh-op-run{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);z-index:1440;
-  width:min(560px,calc(100vw - 64px));max-height:min(240px,34vh);display:flex;flex-direction:column;
+  width:min(560px,calc(100vw - 64px));max-height:min(420px,52vh);display:flex;flex-direction:column;
   border-radius:var(--dsw-radius-lg);background:var(--dsw-alias-bg-layer-2);
   border:.5px solid var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);
-  color:var(--dsw-alias-label-primary);font-size:12px;line-height:17px;overflow:hidden;
+  color:var(--dsw-alias-label-primary);font-size:12.5px;line-height:18px;overflow:hidden;
   animation:dsh-op-pop-in .17s cubic-bezier(.22,1,.36,1) both}
-.dsh-op-runHead{display:flex;align-items:center;gap:8px;padding:8px 12px;flex:none;
+.dsh-op-runHead{display:flex;align-items:center;gap:8px;padding:9px 12px;flex:none;
   border-bottom:1px solid var(--dsw-alias-border-l1)}
-.dsh-op-runTitle{flex:1;font-size:12.5px;font-weight:600}
-.dsh-op-runBody{flex:1;min-height:0;overflow-y:auto;padding:8px 12px;display:flex;
-  flex-direction:column;gap:6px}
+.dsh-op-runTitle{flex:1;font-size:13px;font-weight:600}
+.dsh-op-runBody{flex:1;min-height:0;overflow-y:auto;padding:10px 13px;display:flex;
+  flex-direction:column;gap:9px}
 .dsh-op-runWait{color:var(--dsw-alias-label-secondary);font-size:11.5px}
-.dsh-op-runRow{display:flex;gap:8px;align-items:baseline;
+/* The tag sits above the text instead of beside it: a reasoning paragraph beside an
+   inline label wrapped into a narrow column and read as a hanging indent. */
+.dsh-op-runRow{display:flex;flex-direction:column;gap:3px;
   color:var(--dsw-alias-label-secondary)}
 .dsh-op-runRow[data-kind="round"]{color:var(--dsw-alias-label-primary)}
-.dsh-op-runTag{flex:none;font-weight:600;color:var(--dsw-alias-brand-primary);font-size:11px}
-.dsh-op-runText{flex:1;min-width:0;white-space:pre-wrap;word-break:break-word;opacity:.92}
+.dsh-op-runTag{font-weight:600;color:var(--dsw-alias-brand-primary);font-size:11px;
+  letter-spacing:.02em}
+.dsh-op-runText{white-space:pre-wrap;word-break:break-word;opacity:.92}
 .dsh-op-runErr{margin-top:4px;font-size:11px;color:var(--dsw-alias-state-error-primary)}
 @media (prefers-reduced-motion:reduce){.dsh-op-run{animation:none}}
 .dsh-op-expand{position:fixed;left:50%;bottom:120px;transform:translateX(-50%);z-index:1450;
@@ -1357,10 +1349,12 @@ window.__ModuleLoader__.load({
         setNotice(mode === 'expand' ? t('working.expand') : t('working'))
         const requestId = `j${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`
         publishJob({ id: requestId, mode, steps: [], done: false, error: null, collapsed: false, sessionId: String(sessionId) })
-        // 润色 / 扩写 report through their own surfaces: the button state, the step
-        // rows at the end of the turn, and — for an expansion — the result card.
-        // The autopilot's thinking window is a different monitor and must not open
-        // here, or two unrelated panels appear for one click.
+        // 润色 / 扩写 report through their own surfaces: the run panel above the
+        // composer, and — for an expansion — the result card. The autopilot's
+        // thinking window is a separate monitor and must not open here.
+        // Set when the expand card takes the panel's slot, so `finally` does not
+        // publish the job straight back and stack two panels at one anchor.
+        let expandTakesOver = false
         const stopWatch = watchJob(requestId)
         const abort = typeof AbortController === 'function' ? new AbortController() : undefined
         activeAbort = abort ?? null
@@ -1415,6 +1409,9 @@ window.__ModuleLoader__.load({
           // card is a record of what went in, not a gate in front of it.
           if (mode === 'expand') {
             publishExpandCard({ text: next, source, at: Date.now() })
+            // The card takes the slot the run panel occupied. `finally` would put the
+            // job back after this return, so the panel is closed there instead.
+            expandTakesOver = true
           }
           inputActions.setDraft(next)
           setTimeout(() => report('after', {
@@ -1438,8 +1435,12 @@ window.__ModuleLoader__.load({
           busyRef.current = false
           setRunning(null)
           // Close the panel out: a success fades quickly, a failure stays long
-          // enough to be read.
-          if (jobState !== null && jobState.id === requestId) {
+          // enough to be read. When the expand card already claimed the slot the job
+          // is cleared outright — republishing it would draw the process panel on top
+          // of the card that replaced it.
+          if (expandTakesOver) {
+            publishJob(null)
+          } else if (jobState !== null && jobState.id === requestId) {
             const failed = jobState.error !== null && jobState.error !== undefined
             publishJob({ ...jobState, done: true })
             setTimeout(() => {
@@ -1992,55 +1993,6 @@ window.__ModuleLoader__.load({
         h('div', { className: 'dsh-op-expandFoot' },
           h('span', { className: 'dsh-op-expandNote' }, t('expand.card.written')))
       )
-    }
-    // ── in-conversation step rows ───────────────────────────────────────────
-    /**
-     * The job's steps, drawn at the end of the current turn.
-     *
-     * dsh renders its own tool calls as chat nodes, and a plugin cannot borrow that
-     * renderer without shadowing it. `conversation.chat.turnTail` is an additive
-     * list with no replace risk, so the steps land where the reader already is
-     * instead of in a floating panel over the sidebar.
-     */
-    function TurnSteps({ t, sessionId }) {
-      const job = useJob()
-      if (job === null || Array.isArray(job.steps) === false || job.steps.length === 0) return null
-      // The job store is module-wide, so a run started in one conversation must not
-      // draw rows in another. Without this the steps appeared in whichever session
-      // was open, and a brand-new session showed a live spinner for work it did not
-      // own. Older builds omit the field, in which case the row still shows.
-      if (typeof job.sessionId === 'string' && job.sessionId !== ''
-        && typeof sessionId === 'string' && String(sessionId) !== job.sessionId) return null
-      // The job carries `done` and `error`; a running state is the absence of both.
-      const failed = job.error !== null && job.error !== undefined
-      const finished = job.done === true
-      const mode = job.mode === 'expand' ? 'expand' : 'polish'
-      const label = finished
-        ? (failed ? t('job.failed') : t('job.done'))
-        : t(mode === 'expand' ? 'job.expanding' : 'job.polishing')
-      return h('div', { className: 'dsh-op-steps' },
-        h('div', { className: 'dsh-op-stepsHead' },
-          h('span', { className: 'dsh-op-stepsTitle' }, label),
-          finished ? null : h('span', { className: 'dsh-op-stepsSpin' }, '⟳')),
-        job.steps.map((step, index) => {
-          // A step carries `label` (检索 / 改写), not `text`. Reading the missing
-          // field printed an empty row for every step that had no detail yet.
-          // Once the job is done, whatever never reported a state is finished too,
-          // otherwise the last row keeps a spinner after the work stopped.
-          const state = step.state === 'pending' && finished ? 'done' : (step.state ?? 'pending')
-          return h('div', {
-            key: String(index),
-            className: 'dsh-op-stepRow',
-            'data-state': state,
-          },
-          h('span', { className: 'dsh-op-stepDot' },
-            state === 'done' ? '✓' : state === 'error' ? '✕' : state === 'skipped' ? '–' : '◐'),
-          h('span', { className: 'dsh-op-stepText' }, step.label ?? step.key ?? ''),
-          step.detail === undefined || step.detail === ''
-            ? null
-            : h('span', { className: 'dsh-op-stepDetail' }, step.detail))
-        }),
-        failed ? h('div', { className: 'dsh-op-stepError' }, String(job.error)) : null)
     }
 
     // ── run panel: 润色 / 扩写, above the composer ────────────────────────────
@@ -2979,14 +2931,6 @@ window.__ModuleLoader__.load({
         label: () => t('settings.nav'),
       }, props => h(SettingsPage, { ...props, t })))
 
-
-      // Steps belong in the conversation, not in a panel over the sidebar.
-      ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
-        name: 'conversation.chat.turnTail',
-        id: 'one-click-polish-steps',
-        order: 40,
-        label: () => t('job.label'),
-      }, props => h(TurnSteps, { ...props, t })))
       // The thinking window is the autopilot monitor; it stays in the overlay.
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({
         name: 'shell.overlay',
