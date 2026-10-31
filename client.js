@@ -1731,6 +1731,11 @@ window.__ModuleLoader__.load({
             'aria-expanded': autoOpen ? 'true' : 'false',
             title: autoTitle,
             'aria-label': autoTitle,
+            // A one-shot run owns the composer while it is in flight: it is about to
+            // rewrite the draft this panel was opened from, so starting a loop on top
+            // of it would interleave two writers on the same text. An already-open
+            // panel stays clickable so it can still be closed.
+            disabled: busy && autoOpen !== true,
             onMouseDown: event => event.preventDefault(),
             onClick: () => {
               // The same button closes the panel it opened. After a run ends, the
@@ -2059,7 +2064,9 @@ window.__ModuleLoader__.load({
                   h('button', {
                     type: 'button',
                     className: 'dsh-op-save',
-                    disabled: starting,
+                    // A one-shot run in flight owns the draft; starting a loop here
+                    // would have two writers on the same text.
+                    disabled: starting || busy,
                     onClick: () => {
                       // Hand the dialog to the frame-wide overlay.
                       publishConfirm({
@@ -2677,10 +2684,15 @@ window.__ModuleLoader__.load({
               const response = await fetch(`${RUNS}?sessionId=${encodeURIComponent(think.sessionId)}`)
               const payload = await response.json()
               if (cancelled) return
-              // This conversation's own log, nothing borrowed from another one: an
-              // empty list means this chat has not run the autopilot yet.
               const list = Array.isArray(payload?.entries) ? payload.entries : []
-              setEntries(list.slice(-300))
+              // The session log is shared: every job archives into it, including a
+              // one-shot 润色/扩写. Rows carry the id of the run that wrote them, so
+              // only the autopilot's own rows belong in this window — otherwise the
+              // monitor showed a polish's reasoning as if it were the loop's.
+              // Rows from older builds have no `run` field and are kept.
+              const pilotOnly = list.filter(entry => typeof entry.run !== 'string'
+                || entry.run.startsWith('autopilot-'))
+              setEntries(pilotOnly.slice(-300))
               setStatus('ready')
             } catch {
               if (!cancelled) setStatus('error')
