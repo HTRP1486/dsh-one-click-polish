@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
-# One release, three places that must agree.
+# One release, four places that must agree.
 #
-#   package.json version == npm latest == GitHub tag/Release
+#   package.json version == npm latest == GitHub tag == GitHub Release
 #
 # Run from the repo root. It refuses to continue when the tree is dirty, when the
 # three places already disagree, or when the tag exists — a forced resync there
 # would publish a version number that does not match its contents.
+#
+# The GitHub Release step needs a token in the environment, never on the command
+# line and never in this file:
+#
+#   GITHUB_TOKEN=... ./release.sh
+#
+# Without it the release still publishes to npm and pushes the tag; only the
+# Release page and its tarball are skipped, with a reminder printed at the end.
 set -euo pipefail
 
 VERSION=$(node -p "require('./package.json').version")
@@ -73,4 +81,84 @@ npm publish --access public
 echo
 echo "发布完成: $TAG"
 echo "  npm     https://www.npmjs.com/package/dsh-one-click-polish"
-echo "  release 需要在网页上手动创建，附件用 npm pack 产出的 tgz"
+
+# 6. GitHub Release + tarball.
+#
+# Same bytes npm received, attached where someone can download them without a
+# registry client. The token stays in the environment: passing it as an argument
+# would put it in the shell history and in `ps`.
+if [ -z "${GITHUB_TOKEN:-}" ]; then
+  echo "  release 跳过：没有设置 GITHUB_TOKEN"
+  echo "          用 GITHUB_TOKEN=... ./release.sh 重跑，或去网页手动创建，附件用 npm pack 产出的 tgz"
+  exit 0
+fi
+
+REMOTE=$(git remote get-url origin)
+REPO=$(printf '%s' "$REMOTE" | sed -E 's#.*[:/]([^/]+/[^/]+?)(\.git)?$#\1#')
+echo "  release $REPO@$TAG"
+
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+npm pack --pack-destination "$TMP" >/dev/null
+TGZ=$(ls "$TMP"/*.tgz | head -n 1)
+
+# A body is generated from the commit subjects since the previous tag, so the
+# Release says what changed without anyone retyping it.
+PREV=$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)
+if [ -n "$PREV" ]; then
+  NOTES=$(git log --pretty=format:'- %s' "$PREV..$TAG^" 2>/dev/null || true)
+else
+  NOTES=$(git log --pretty=format:'- %s' -n 20 "$TAG^" 2>/dev/null || true)
+fi
+[ -n "${NOTES:-}" ] || NOTES="- $TAG"
+
+node -e '
+const [tag, notes, out] = process.argv.slice(1)
+require("node:fs").writeFileSync(out, JSON.stringify({
+  tag_name: tag,
+  name: tag,
+  body: notes,
+  draft: false,
+  prerelease: false,
+}))
+' "$TAG" "$NOTES" "$TMP/body.json"
+
+CODE=$(curl -sS -o "$TMP/resp.json" -w '%{http_code}' \
+  -X POST "https://api.github.com/repos/$REPO/releases" \
+  -H "Authorization: token $GITHUB_TOKEN" \
+  -H "Accept: application/vnd.github+json" \
+  -H "User-Agent: dsh-one-click-polish-release" \
+  -H "Content-Type: application/json" \
+  --data-binary "@$TMP/body.json")
+
+case "$CODE" in
+  201) echo "  release 已创建" ;;
+  422) echo "  release 已存在，改为补传附件" ;;
+  *)   echo "  release 创建失败 HTTP $CODE"; cat "$TMP/resp.json"; exit 1 ;;
+esac
+
+# Resolve the release id, then upload. 422 on the asset means it was already there.
+RELEASE_ID=$(node -e '
+const fs = require("node:fs")
+try { process.stdout.write(String(JSON.parse(fs.readFileSync(process.argv[1], "utf8")).id ?? "")) } catch {}
+' "$TMP/resp.json")
+if [ -z "$RELEASE_ID" ]; then
+  RELEASE_ID=$(curl -sS "https://api.github.com/repos/$REPO/releases/tags/$TAG" \
+    -H "Authorization: token $GITHUB_TOKEN" -H "User-Agent: dsh-one-click-polish-release" \
+    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(String(JSON.parse(s).id??""))}catch{}})')
+fi
+
+NAME=$(basename "$TGZ")
+UP=$(curl -sS -o /dev/null -w '%{http_code}' \
+  -X POST "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$NAME" \
+  -H "Authorization: token $GITHUB_TOKEN" \
+  -H "User-Agent: dsh-one-click-polish-release" \
+  -H "Content-Type: application/gzip" \
+  --data-binary "@$TGZ")
+case "$UP" in
+  201) echo "  附件已上传: $NAME" ;;
+  422) echo "  附件已存在: $NAME" ;;
+  *)   echo "  附件上传失败 HTTP $UP"; exit 1 ;;
+esac
+
+echo "  release https://github.com/$REPO/releases/tag/$TAG"
