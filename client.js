@@ -316,6 +316,8 @@ window.__ModuleLoader__.load({
         'auto.goal.placeholder': '目标（可选）：写清楚要达成什么，达成后自动停；不填就只看轮数',
         'auto.start': '启动',
         'auto.starting': '正在启动…',
+        'confirm.cancel': '取消',
+        'confirm.ok': '确定',
         'auto.warn.title': '确认启动自动驾驶？',
         'auto.warn.body': '启动后 AI 会自动往这个会话里发送消息：读对话 → 写下一步提示词 → 发给助手，一轮接一轮。它会消耗模型额度，也可能做出你没想到的改动。随时可以中断或结束循环。',
         'auto.warn.cancel': '再想想',
@@ -502,6 +504,8 @@ window.__ModuleLoader__.load({
         'auto.goal.placeholder': 'Goal (optional): say what "done" means and it stops there; leave empty to just run the rounds',
         'auto.start': 'Start',
         'auto.starting': 'Starting…',
+        'confirm.cancel': 'Cancel',
+        'confirm.ok': 'Confirm',
         'auto.warn.title': 'Start autopilot?',
         'auto.warn.body': 'The AI will send messages into this conversation by itself: read the history, write the next prompt, send it, round after round. It spends model quota and may change things you did not expect. You can interrupt or end the loop at any time.',
         'auto.warn.cancel': 'Not now',
@@ -706,6 +710,19 @@ window.__ModuleLoader__.load({
    holds one row or three, so its top edge does not jump while the run progresses.
    236px fits the header, three rows and a two-line thought without scrolling the body.
    Width is capped lower than before — 480px reads as a card, 600 read as a slab. */
+/* Frame-wide confirmation. Sits above every panel so the question cannot be missed,
+   and the backdrop takes the click so a stray press cancels instead of confirming. */
+.dsh-op-confirm{position:fixed;inset:0;z-index:1600;display:flex;align-items:center;
+  justify-content:center;background:rgba(0,0,0,.42);padding:24px;
+  animation:dsh-op-fade-in .14s ease-out both}
+@keyframes dsh-op-fade-in{from{opacity:0}to{opacity:1}}
+.dsh-op-confirmBox{width:min(420px,100%);display:flex;flex-direction:column;gap:10px;
+  padding:18px;border-radius:var(--dsw-radius-panel);background:var(--dsw-alias-bg-layer-1);
+  border:.5px solid var(--dsw-alias-border-l2);box-shadow:var(--dsw-elevation-prominent);
+  color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px}
+.dsh-op-confirmTitle{font-size:14px;font-weight:600}
+.dsh-op-confirmBody{color:var(--dsw-alias-label-secondary);white-space:pre-wrap}
+.dsh-op-confirmFoot{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
 .dsh-op-run{position:fixed;left:0;right:0;margin:0 auto;bottom:120px;z-index:1440;
   width:min(480px,calc(100vw - 64px));max-width:480px;
   height:348px;display:flex;flex-direction:column;
@@ -2308,6 +2325,48 @@ window.__ModuleLoader__.load({
       }, [intervalMs])
       return box
     }
+    // ── confirm dialog ──────────────────────────────────────────────────────
+    /**
+     * A frame-wide confirmation for actions that talk to the assistant as the user.
+     *
+     * Starting the autopilot sends real messages, so it asks first. The request is
+     * published by the button and answered here; the two are deliberately apart
+     * because the button lives in the composer and the dialog must cover the frame.
+     */
+    function ConfirmDialog({ t }) {
+      const confirm = useConfirm()
+      if (confirm === null) return null
+      const close = () => publishConfirm(null)
+      return h('div', {
+        className: 'dsh-op-confirm',
+        role: 'dialog',
+        'aria-modal': 'true',
+        // Clicking the backdrop cancels; the box itself must not close on click.
+        onClick: close,
+      },
+      h('div', {
+        className: 'dsh-op-confirmBox',
+        onClick: event => event.stopPropagation(),
+      },
+      h('div', { className: 'dsh-op-confirmTitle' }, confirm.title),
+      confirm.body === undefined || confirm.body === '' ? null
+        : h('div', { className: 'dsh-op-confirmBody' }, confirm.body),
+      h('div', { className: 'dsh-op-confirmFoot' },
+        h('button', {
+          type: 'button',
+          className: 'dsh-op-btn',
+          onClick: close,
+        }, confirm.cancelLabel ?? t('confirm.cancel')),
+        h('button', {
+          type: 'button',
+          className: 'dsh-op-save',
+          onClick: () => {
+            // Close first: the action may open another surface of its own.
+            publishConfirm(null)
+            if (typeof confirm.onConfirm === 'function') confirm.onConfirm()
+          },
+        }, confirm.confirmLabel ?? t('confirm.ok')))))
+    }
     // ── streaming thought ───────────────────────────────────────────────────
     /**
      * One thought, revealed a character at a time.
@@ -3581,6 +3640,14 @@ window.__ModuleLoader__.load({
         id: 'one-click-polish-card',
         order: 23,
       }, props => h(ExpandCard, { ...props, t })))
+      // The confirmation the autopilot's 启动 publishes. Same story as the card: its
+      // host went with the progress panel, so the click closed the panel and nothing
+      // followed. Highest order so the question covers every other surface.
+      ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+        name: 'shell.overlay',
+        id: 'one-click-polish-confirm',
+        order: 24,
+      }, props => h(ConfirmDialog, { ...props, t })))
     }
 
     exports.apply = apply
