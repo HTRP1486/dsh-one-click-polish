@@ -1,6 +1,6 @@
 {
   "name": "dsh-one-click-polish",
-  "version": "1.8.4",
+  "version": "1.8.5",
   "description": "One-click polish, expand and autopilot for the DeepSeek Harness composer: rewrite the draft with the model the session is switched to, expand a one-line wish into a task brief, or let an AI drive a goal round after round.",
   "keywords": [
     "dsh",

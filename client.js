@@ -3555,6 +3555,14 @@ window.__ModuleLoader__.load({
         id: 'one-click-polish-run',
         order: 22,
       }, props => h(RunPanel, { ...props, t })))
+      // The expand result card. It used to be mounted inside the progress panel, and
+      // when that panel was removed the card lost its only mount point — the expansion
+      // still wrote the draft but the brief never appeared.
+      ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+        name: 'shell.overlay',
+        id: 'one-click-polish-card',
+        order: 23,
+      }, props => h(ExpandCard, { ...props, t })))
     }
 
     exports.apply = apply
