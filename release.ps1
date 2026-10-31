@@ -23,7 +23,11 @@
 [CmdletBinding()]
 param(
   [switch]$SkipNpm,
-  [switch]$DryRun
+  [switch]$DryRun,
+  # Backfill the GitHub Release for a version that is already published. Skips the
+  # tag and npm checks and the publish steps — the tag existing is the normal state
+  # here, and refusing on it made a skipped Release impossible to add afterwards.
+  [switch]$ReleaseOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,12 +48,16 @@ if ($dirty) {
 }
 
 # 3. Tag must not exist, and npm must not already have this version.
-git rev-parse $tag *> $null
-if ($LASTEXITCODE -eq 0) { Fail "tag $tag 已存在。要发新版就先改 package.json 的 version。" }
+#    -ReleaseOnly is the backfill path: the tag and the npm version existing is the
+#    normal state there, so neither check applies.
+if (-not $ReleaseOnly) {
+  git rev-parse $tag *> $null
+  if ($LASTEXITCODE -eq 0) { Fail "tag $tag 已存在。要发新版就先改 package.json 的 version。" }
 
-if (-not $SkipNpm) {
-  npm view "dsh-one-click-polish@$version" version *> $null
-  if ($LASTEXITCODE -eq 0) { Fail "npm 上已存在 $version。请先提升 package.json 的 version。" }
+  if (-not $SkipNpm) {
+    npm view "dsh-one-click-polish@$version" version *> $null
+    if ($LASTEXITCODE -eq 0) { Fail "npm 上已存在 $version。请先提升 package.json 的 version。" }
+  }
 }
 
 # 4. Syntax and encoding before anything leaves the machine.
@@ -91,30 +99,34 @@ if ($DryRun) {
 # created first would then point at a version nobody can install — which is exactly
 # what happened on 1.9.6. With this order a failed publish leaves no tag behind.
 Step '推送与发布'
-git push
-if ($LASTEXITCODE -ne 0) { Fail 'git push 失败' }
-
-if ($SkipNpm) {
-  Write-Host '  跳过 npm publish（-SkipNpm）'
+if ($ReleaseOnly) {
+  Write-Host "  跳过推送与发布（-ReleaseOnly）：$tag 已经发布，只补 Release"
 } else {
-  # `npm publish` alone relies on npm being logged in. The token can come from the
-  # environment instead, the same way GITHUB_TOKEN does, so a release works on a
-  # machine that never ran `npm login`.
-  $npmArgs = @('publish', '--access', 'public')
-  if ($env:NPM_TOKEN) {
-    $npmArgs += "--//registry.npmjs.org/:_authToken=$($env:NPM_TOKEN)"
+  git push
+  if ($LASTEXITCODE -ne 0) { Fail 'git push 失败' }
+
+  if ($SkipNpm) {
+    Write-Host '  跳过 npm publish（-SkipNpm）'
+  } else {
+    # `npm publish` alone relies on npm being logged in. The token can come from the
+    # environment instead, the same way GITHUB_TOKEN does, so a release works on a
+    # machine that never ran `npm login`.
+    $npmArgs = @('publish', '--access', 'public')
+    if ($env:NPM_TOKEN) {
+      $npmArgs += "--//registry.npmjs.org/:_authToken=$($env:NPM_TOKEN)"
+    }
+    npm @npmArgs
+    if ($LASTEXITCODE -ne 0) { Fail 'npm publish 失败（没有打 tag，修好后可以重跑）' }
   }
-  npm @npmArgs
-  if ($LASTEXITCODE -ne 0) { Fail 'npm publish 失败（没有打 tag，修好后可以重跑）' }
+
+  git tag -a $tag -m $tag
+  git push origin $tag
+  if ($LASTEXITCODE -ne 0) { Fail 'tag 推送失败' }
+
+  Write-Host ''
+  Write-Host "发布完成: $tag" -ForegroundColor Green
+  Write-Host '  npm     https://www.npmjs.com/package/dsh-one-click-polish'
 }
-
-git tag -a $tag -m $tag
-git push origin $tag
-if ($LASTEXITCODE -ne 0) { Fail 'tag 推送失败' }
-
-Write-Host ''
-Write-Host "发布完成: $tag" -ForegroundColor Green
-Write-Host '  npm     https://www.npmjs.com/package/dsh-one-click-polish'
 
 # 7. GitHub Release + tarball.
 $token = $env:GITHUB_TOKEN
