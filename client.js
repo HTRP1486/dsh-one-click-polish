@@ -898,22 +898,22 @@ window.__ModuleLoader__.load({
 .dsh-op-switch:has(input:focus-visible){outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
 .dsh-op-switch input{position:absolute;opacity:0;pointer-events:none}
 .dsh-op-switchTrack{flex:0 0 32px;width:32px;height:18px;border-radius:999px;position:relative;
-  /* Off must still be legible on a dark panel: the track sits a step above the row
-     background and keeps an inner edge, so the whole switch reads as a control
-     rather than a dark smudge. */
-  background:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));
+  /* Off: a dark track with an inner edge, so the control reads as a slot rather than
+     a smudge on the panel. */
+  background:var(--dsw-alias-bg-layer-2);
   box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l2);
   transition:background .18s ease,box-shadow .18s ease}
 .dsh-op-switchThumb{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
-  /* Off: a light thumb on the muted track, so the control never sinks into the
-     panel. On: the same thumb rides the brand-coloured track. */
-  background:var(--dsw-alias-label-primary);
+  /* Off: a light thumb on the dark track. */
+  background:var(--dsw-alias-label-secondary);
   box-shadow:0 1px 2px rgba(0,0,0,.35);
   transform:translateX(0);transition:transform .2s cubic-bezier(.22,1,.36,1),background .18s}
+/* On: the brand colour in dark mode is near-white, so the thumb has to go dark —
+   a white thumb on a white track reads as one solid blob with no state at all. */
 .dsh-op-switch:has(input:checked) .dsh-op-switchTrack{
   background:var(--dsw-alias-brand-primary);box-shadow:none}
 .dsh-op-switch:has(input:checked) .dsh-op-switchThumb{transform:translateX(14px);
-  background:#fff}
+  background:var(--dsw-alias-bg-base);box-shadow:none}
 @media (prefers-reduced-motion:reduce){
   .dsh-op-switchTrack,.dsh-op-switchThumb{transition:none}
 }
