@@ -2643,43 +2643,55 @@ window.__ModuleLoader__.load({
       const openRows = openRowsRef.current
       const [, setFoldTick] = useState(0)
 
-      // Follow the run that is happening now, and fall back to this session's
-      // archived log when nothing is live. The live job's trace is what makes the
-      // panel show reasoning as it streams: its rows carry `live` and grow in place,
-      // while `/runs` only holds what a finished run already settled.
-      const liveJob = useJob()
+      // This window reports on the autopilot, so it reads the autopilot's own job.
+      //
+      // Two sources, in order. `/progress?id=autopilot-<session>` is the loop's live
+      // trace: rows carry `live` and grow in place, which is what makes the thought
+      // stream. `/runs` is the archived log, written once per settled row, and it is
+      // what remains after the run ends.
+      //
+      // The browser job store is deliberately not consulted: it holds the one-shot
+      // 润色/扩写 job, and reading it here showed a polish's reasoning inside the
+      // autopilot monitor whenever both were running.
       useEffect(() => {
         if (think.open !== true || think.sessionId === null) return undefined
-        // A job that belongs to this conversation is already streaming its trace,
-        // so polling the archive would only show a staler copy of the same run.
-        if (liveJob !== null && Array.isArray(liveJob.trace)
-          && (liveJob.sessionId === undefined || liveJob.sessionId === ''
-            || String(liveJob.sessionId) === String(think.sessionId))) {
-          setEntries(liveJob.trace.slice(-300))
-          setStatus('ready')
-          return undefined
-        }
         let cancelled = false
+        const liveId = `autopilot-${think.sessionId}`
         const tick = async () => {
+          let live = null
           try {
-            const response = await fetch(`${RUNS}?sessionId=${encodeURIComponent(think.sessionId)}`)
+            const response = await fetch(`${PROGRESS}?id=${encodeURIComponent(liveId)}`)
             const payload = await response.json()
             if (cancelled) return
-            // This conversation's own log, nothing borrowed from another one: an
-            // empty list means this chat has not run the autopilot yet.
-            const list = Array.isArray(payload?.entries) ? payload.entries : []
-            setEntries(list.slice(-300))
+            const job = payload?.job
+            if (job !== null && job !== undefined && Array.isArray(job.trace) && job.trace.length > 0) {
+              live = job.trace.slice(-300)
+            }
+          } catch { /* fall through to the archive */ }
+          if (cancelled) return
+          if (live !== null) {
+            setEntries(live)
             setStatus('ready')
-          } catch {
-            if (!cancelled) setStatus('error')
+          } else {
+            try {
+              const response = await fetch(`${RUNS}?sessionId=${encodeURIComponent(think.sessionId)}`)
+              const payload = await response.json()
+              if (cancelled) return
+              // This conversation's own log, nothing borrowed from another one: an
+              // empty list means this chat has not run the autopilot yet.
+              const list = Array.isArray(payload?.entries) ? payload.entries : []
+              setEntries(list.slice(-300))
+              setStatus('ready')
+            } catch {
+              if (!cancelled) setStatus('error')
+            }
           }
-          // Half-second polling: a streaming row should look like it is moving.
-          // Archive polling only: the live path above does not reach here.
+          // Half-second polling: a running loop appends a row per step.
           if (!cancelled) setTimeout(tick, 500)
         }
         tick()
         return () => { cancelled = true }
-      }, [think.open, think.sessionId, liveJob])
+      }, [think.open, think.sessionId])
 
       // Keep the newest entry in view unless the user scrolled up to read.
       useEffect(() => {
