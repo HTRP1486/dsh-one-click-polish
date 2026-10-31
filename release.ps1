@@ -6,14 +6,15 @@
   Run from the repo root:
 
     $env:GITHUB_TOKEN = 'ghp_...'   # optional; without it the Release step is skipped
+    $env:NPM_TOKEN    = 'npm_...'   # optional; only needed when npm is not logged in
     .\release.ps1
 
   It refuses to continue when the tree is dirty, when the version is already
   published, or when the tag exists — a forced resync there would ship a version
   number that does not match its contents.
 
-  The token is read from the environment, never from a parameter: an argument
-  would land in the shell history and in the process list.
+  Tokens are read from the environment, never from parameters: an argument would
+  land in the shell history and in the process list.
 #>
 [CmdletBinding()]
 param(
@@ -79,22 +80,33 @@ if ($DryRun) {
   exit 0
 }
 
-# 6. Push, tag, publish. The tag is created after the commit so it points at the
-#    exact bytes npm receives.
+# 6. Push, publish, then tag.
+#
+# npm comes before the tag on purpose. Publishing is the step that can fail for
+# reasons outside this repo (missing auth, registry refusing the name), and a tag
+# created first would then point at a version nobody can install — which is exactly
+# what happened on 1.9.6. With this order a failed publish leaves no tag behind.
 Step '推送与发布'
 git push
 if ($LASTEXITCODE -ne 0) { Fail 'git push 失败' }
 
-git tag -a $tag -m $tag
-git push origin $tag
-if ($LASTEXITCODE -ne 0) { Fail 'tag 推送失败' }
-
 if ($SkipNpm) {
   Write-Host '  跳过 npm publish（-SkipNpm）'
 } else {
-  npm publish --access public
-  if ($LASTEXITCODE -ne 0) { Fail 'npm publish 失败' }
+  # `npm publish` alone relies on npm being logged in. The token can come from the
+  # environment instead, the same way GITHUB_TOKEN does, so a release works on a
+  # machine that never ran `npm login`.
+  $npmArgs = @('publish', '--access', 'public')
+  if ($env:NPM_TOKEN) {
+    $npmArgs += "--//registry.npmjs.org/:_authToken=$($env:NPM_TOKEN)"
+  }
+  npm @npmArgs
+  if ($LASTEXITCODE -ne 0) { Fail 'npm publish 失败（没有打 tag，修好后可以重跑）' }
 }
+
+git tag -a $tag -m $tag
+git push origin $tag
+if ($LASTEXITCODE -ne 0) { Fail 'tag 推送失败' }
 
 Write-Host ''
 Write-Host "发布完成: $tag" -ForegroundColor Green
