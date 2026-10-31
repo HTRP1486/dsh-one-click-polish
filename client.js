@@ -1101,6 +1101,11 @@ window.__ModuleLoader__.load({
   flex:none}
 .dsh-op-thinkBody{white-space:pre-wrap;word-break:break-word;font-size:11.5px;line-height:16px;
   color:var(--dsw-alias-label-secondary)}
+/* The streaming variant inside the monitor. No fixed height and no roll here: the
+   window has its own scrollbar, and clipping a thought to two lines would hide most of
+   it. The typing and the blur are the same as the run panel. */
+.dsh-op-traceStream{display:block}
+.dsh-op-traceStreamInner{display:block}
 .dsh-op-runs{display:flex;flex-direction:column;gap:4px;margin-top:6px}
 .dsh-op-runRow{display:flex;align-items:center;gap:8px;width:100%;padding:7px 9px;
   border-radius:8px;border:1px solid var(--dsw-alias-border-l1);cursor:pointer;text-align:left;
@@ -2305,7 +2310,12 @@ window.__ModuleLoader__.load({
      * grows, so the newest words are always the ones on screen and the older ones roll
      * out of the top.
      */
-    function ThoughtStream({ text }) {
+    function ThoughtStream({ text, variant }) {
+      // Two shapes, one behaviour. In the run panel the box is a fixed two lines and
+      // the text rolls out of the top; in the autopilot monitor it grows inside a window
+      // that already scrolls, so clipping to two lines there would hide most of a
+      // thought. The typing itself is identical.
+      const inTrace = variant === 'trace'
       const [shown, setShown] = useState(0)
       const boxRef = useRef(null)
       const innerRef = useRef(null)
@@ -2349,6 +2359,8 @@ window.__ModuleLoader__.load({
       // out of the top as new lines arrive — the same read as a scrolling log, without
       // a scrollbar. Setting scrollTop would jump in one frame and show nothing.
       useEffect(() => {
+        // Only the clipped variant rolls; the trace grows and the window scrolls itself.
+        if (inTrace) return
         const box = boxRef.current
         const inner = innerRef.current
         if (box === null || inner === null) return
@@ -2367,15 +2379,21 @@ window.__ModuleLoader__.load({
       const settled = visible.slice(0, cut)
       const fresh = visible.slice(cut)
 
-      return h('span', { className: 'dsh-op-taskStream', ref: boxRef },
-        h('span', { className: 'dsh-op-taskStreamInner', ref: innerRef },
-          settled,
-          fresh === ''
-            ? null
-            : h('span', {
-              key: 'fresh-' + cut + '-' + fresh.length,
-              className: 'dsh-op-fresh',
-            }, fresh)))
+      return h('span', {
+        className: inTrace ? 'dsh-op-traceStream' : 'dsh-op-taskStream',
+        ref: boxRef,
+      },
+      h('span', {
+        className: inTrace ? 'dsh-op-traceStreamInner' : 'dsh-op-taskStreamInner',
+        ref: innerRef,
+      },
+      settled,
+      fresh === ''
+        ? null
+        : h('span', {
+          key: 'fresh-' + cut + '-' + fresh.length,
+          className: 'dsh-op-fresh',
+        }, fresh)))
     }
     // ── run panel: 润色 / 扩写, above the composer ────────────────────────────
     /**
@@ -2691,6 +2709,16 @@ window.__ModuleLoader__.load({
           ? `${entry.summary ?? ''}${entry.text ? ` — ${entry.text}` : ''}`
           : (entry.reasoning || entry.text || '')
 
+        // What goes inside the row. A tool line is a settled result and is printed at
+        // once; reasoning types itself out exactly as it does in the run panel, so the
+        // monitor reads as live thinking rather than clauses landing in chunks.
+        // A folded row shows only its peek line above, so the body is empty here.
+        const bodyNode = foldable && !open
+          ? ''
+          : (kind === 'tool'
+            ? String(body).slice(0, 1500)
+            : h(ThoughtStream, { text: String(body).slice(0, 1500), variant: 'trace' }))
+
         // Two things fold: long tool rows (noise) and reasoning rows (long
         // paragraphs worth skimming past). A live row never folds — the point of
         // watching a run is seeing the text arrive.
@@ -2730,8 +2758,7 @@ window.__ModuleLoader__.load({
             ? h('span', { className: 'dsh-op-thinkPeek' }, String(body).replace(/\s+/g, ' ').slice(0, 80))
             : null,
           entry.at === undefined ? null : h('span', { className: 'dsh-op-thinkTime' }, String(entry.at).slice(11, 19))),
-        h('div', { className: 'dsh-op-thinkBody' },
-          foldable && !open ? '' : String(body).slice(0, 1500)))
+        h('div', { className: 'dsh-op-thinkBody' }, bodyNode))
       })
 
       return h('div', { className: 'dsh-op-think', 'data-collapsed': collapsed ? 'true' : 'false' },
