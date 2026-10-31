@@ -121,9 +121,9 @@ https://raw.githubusercontent.com/HTRP1486/dsh-one-click-polish/main/market-inde
 
 | 位置 | 当前 |
 | --- | --- |
-| `package.json` 的 `version` | `1.2.4` |
-| npm 的 `latest` 标签 | `1.2.4` |
-| GitHub 的 tag / Release | `v1.2.4` |
+| `package.json` 的 `version` | `1.9.2` |
+| npm 的 `latest` 标签 | `1.9.2` |
+| GitHub 的 tag / Release | `v1.9.2` |
 
 发版跑 `release.sh`：它会拒绝在版本号不一致、工作区不干净、或 tag 已存在时继续。
 
