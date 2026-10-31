@@ -62,6 +62,33 @@ window.__ModuleLoader__.load({
     let lastBoxStamp = ''
 
     /**
+     * When each job was first seen, so the panel can show how long it has been going.
+     *
+     * Deliberately module-level and not a ref: the panel returns early when there is no
+     * job, and a hook after that return would change the hook count between renders —
+     * the failure that once made the whole overlay disappear. Recomputing from a map
+     * keeps the value independent of React's state.
+     */
+    const jobStartedAt = new Map()
+
+    /** Seconds this job has been running, counted from the first render that saw it. */
+    function elapsedForJob(job) {
+      if (job === null || job === undefined) return 0
+      const id = String(job.id)
+      let at = jobStartedAt.get(id)
+      if (at === undefined) {
+        at = Date.now()
+        jobStartedAt.set(id, at)
+        // Only a handful can be live; drop the oldest once the map grows.
+        if (jobStartedAt.size > 8) {
+          const oldest = jobStartedAt.keys().next()
+          if (oldest.done !== true) jobStartedAt.delete(oldest.value)
+        }
+      }
+      return Math.max(0, Math.round((Date.now() - at) / 1000))
+    }
+
+    /**
      * Report one step to the Host's in-memory log.
      *
      * The button lives in a browser this Host cannot inspect, so a click that
@@ -293,6 +320,8 @@ window.__ModuleLoader__.load({
         'job.polishing': '润色中',
         'job.label': '润色步骤',
         'run.waiting': '等待模型响应…',
+        'run.searching': '正在检索资料…',
+        'run.calling': '正在调用',
         'run.close': '关闭这个过程面板',
         'run.task.local': '本地检索',
         'run.task.both': '本地 + 联网检索',
@@ -481,6 +510,8 @@ window.__ModuleLoader__.load({
         'job.polishing': 'Polishing',
         'job.label': 'Polish steps',
         'run.waiting': 'Waiting for the model…',
+        'run.searching': 'Searching for material…',
+        'run.calling': 'Calling',
         'run.close': 'Close this process panel',
         'run.task.local': 'Local lookup',
         'run.task.both': 'Local + web lookup',
@@ -733,6 +764,9 @@ window.__ModuleLoader__.load({
 .dsh-op-runHead{display:flex;align-items:center;gap:8px;padding:10px 14px;flex:none;
   border-bottom:1px solid var(--dsw-alias-border-l1)}
 .dsh-op-runTitle{flex:1;font-size:13px;font-weight:600}
+/* The elapsed clock. Tabular figures so it does not jitter as the digits change. */
+.dsh-op-runClock{flex:none;font-size:11px;font-variant-numeric:tabular-nums;
+  color:var(--dsw-alias-label-tertiary);opacity:.9}
 .dsh-op-runBody{flex:1;min-height:0;overflow-y:auto;padding:10px 14px 12px;display:flex;
   flex-direction:column;gap:2px}
 /* One row per task. The dot carries the state so the eye can run down the three
@@ -2584,7 +2618,22 @@ window.__ModuleLoader__.load({
       // keying the thought off 'running' left the panel blank through the whole opening
       // round — the exact symptom that made the lookups look like they did nothing.
       const lookupBusy = rewriteState !== 'running' && rewriteState !== 'done'
-      const lookupThought = lookupBusy ? tail : ''
+
+      // What to show while the lookup phase is running but has produced no reasoning.
+      //
+      // Not every model emits a trace — the one configured here does not — so the panel
+      // had nothing to print for up to exploreMs (100s by default) and read as frozen.
+      // Naming the tool being called, or saying that the search is under way, keeps the
+      // box occupied with the truth instead of an empty rectangle.
+      const activity = tool === null
+        ? t('run.searching')
+        : `${t('run.calling')} ${tool.name ?? 'tool'}${tool.summary ? ` · ${tool.summary}` : ''}`
+      const lookupThought = !lookupBusy ? '' : (tail !== '' ? tail : activity)
+
+      // Elapsed seconds, so the header moves even when nothing else does. Kept in a
+      // module-level map rather than a hook: this component returns early when there is
+      // no job, and a hook placed after that return would change the hook count.
+      const elapsed = elapsedForJob(job)
 
       // Each task is one line that settles in on its own beat: settled rows blur to
       // clear, the active one keeps its own stream underneath. Staggering by index
@@ -2660,6 +2709,11 @@ window.__ModuleLoader__.load({
         h('div', { className: 'dsh-op-runHead' },
           h('span', { className: 'dsh-op-runTitle' },
             failed ? t('job.failed') : running ? title : t('job.done')),
+          // The elapsed clock is the one thing that always moves. Without it a long
+          // lookup phase is an empty box, and an empty box reads as a freeze.
+          running && elapsed > 0
+            ? h('span', { className: 'dsh-op-runClock' }, `${elapsed}s`)
+            : null,
           h('button', {
             type: 'button',
             className: 'dsh-op-thinkBtn',
