@@ -309,6 +309,7 @@ window.__ModuleLoader__.load({
         'auto.off': '自动',
         'auto.on': '自动',
         'auto.hint': '让 AI 自己写下一步提示词并继续推进；轮数、目标在设置页配置。再点一次停止。',
+        'auto.busy': '润色/扩写正在进行，完成后即可启动。',
         'auto.title': '自动驾驶',
         'auto.mode.rounds': '循环几次结束',
         'auto.mode.goal': '直到达成目标结束',
@@ -494,6 +495,7 @@ window.__ModuleLoader__.load({
         'auto.off': 'Auto',
         'auto.on': 'Auto',
         'auto.hint': 'Let the AI write the next prompt and keep going. Click to configure.',
+        'auto.busy': 'A polish or expand is running; start becomes available when it finishes.',
         'auto.title': 'Autopilot',
         'auto.mode.rounds': 'Stop after N rounds',
         'auto.mode.goal': 'Stop when the goal is met',
@@ -1731,11 +1733,8 @@ window.__ModuleLoader__.load({
             'aria-expanded': autoOpen ? 'true' : 'false',
             title: autoTitle,
             'aria-label': autoTitle,
-            // A one-shot run owns the composer while it is in flight: it is about to
-            // rewrite the draft this panel was opened from, so starting a loop on top
-            // of it would interleave two writers on the same text. An already-open
-            // panel stays clickable so it can still be closed.
-            disabled: busy && autoOpen !== true,
+            // Never disabled: a dead button reads as "the plugin is broken". The panel
+            // opens and explains why 启动 is unavailable instead.
             onMouseDown: event => event.preventDefault(),
             onClick: () => {
               // The same button closes the panel it opened. After a run ends, the
@@ -2049,6 +2048,12 @@ window.__ModuleLoader__.load({
                     value: autoDraft.goal,
                     onChange: event => setAutoDraft({ ...autoDraft, goal: event.target.value }),
                   }),
+                  // Say why 启动 is unavailable rather than leaving a grey button with
+                  // no explanation. A one-shot run owns the draft until it finishes, so
+                  // starting a loop now would put two writers on the same text.
+                  busy
+                    ? h('p', { className: 'dsh-op-hint' }, t('auto.busy'))
+                    : null,
                   h('button', {
                     type: 'button',
                     className: 'dsh-op-btn dsh-op-btn--wide',
