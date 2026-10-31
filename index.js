@@ -1590,35 +1590,76 @@ async function logRoute(req, res) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Normalize the row config into the shape the routes read. */
+/**
+ * Where the settings page stores what the user chose.
+ *
+ * The profile patch layer is the natural home, and `configEditor.edit` writes there —
+ * but dsh verifies each save by re-composing the entry and comparing it with what it
+ * just wrote, and in this profile that comparison never matches, so every save was
+ * refused with "overridden by a home patch or command-line overlay" and the value was
+ * silently lost on restart. The file below is the plugin's own store: it always
+ * succeeds, it survives a restart, and it is read back over the composed config so a
+ * patch layer cannot quietly win.
+ */
+function settingsFile() {
+  const dir = profileDir()
+  return dir === null ? null : join(dir, '.one-click-polish-settings.json')
+}
+
+function readStoredSettings() {
+  const file = settingsFile()
+  if (file === null || !existsSync(file)) return {}
+  try {
+    const parsed = JSON.parse(readFileSync(file, 'utf8'))
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeStoredSettings(values) {
+  const file = settingsFile()
+  if (file === null) return false
+  try {
+    writeFileSync(file, JSON.stringify(values, null, 2), 'utf8')
+    return true
+  } catch {
+    return false
+  }
+}
+
 function readSettings(config) {
+  // Stored choices win over the composed config: this is the layer the settings page
+  // actually writes, so it has to be the layer that takes effect.
+  const merged = { ...(config ?? {}), ...readStoredSettings() }
   return {
-    modelSource: config?.modelSource === 'fixed' ? 'fixed' : 'follow',
-    provider: typeof config?.provider === 'string' ? config.provider : '',
-    model: typeof config?.model === 'string' ? config.model : '',
-    reasoningEffort: typeof config?.reasoningEffort === 'string' ? config.reasoningEffort : '',
-    maxInputChars: positiveInt(config?.maxInputChars, DEFAULT_MAX_INPUT_CHARS),
-    timeoutMs: positiveInt(config?.timeoutMs, DEFAULT_TIMEOUT_MS),
+    modelSource: merged.modelSource === 'fixed' ? 'fixed' : 'follow',
+    provider: typeof merged.provider === 'string' ? merged.provider : '',
+    model: typeof merged.model === 'string' ? merged.model : '',
+    reasoningEffort: typeof merged.reasoningEffort === 'string' ? merged.reasoningEffort : '',
+    maxInputChars: positiveInt(merged.maxInputChars, DEFAULT_MAX_INPUT_CHARS),
+    timeoutMs: positiveInt(merged.timeoutMs, DEFAULT_TIMEOUT_MS),
     // The tool-lookup budget inside one polish, and how many search rounds it may
     // spend. Both are separate from the rewrite budget: a slow search must never
     // eat the time the model needs to write the answer.
-    exploreMs: Math.min(300_000, Math.max(5_000, positiveInt(config?.exploreMs, MAX_EXPLORE_MS))),
-    exploreRounds: Math.min(10, Math.max(1, positiveInt(config?.exploreRounds, MAX_EXPLORE_ROUNDS))),
-    instruction: typeof config?.instruction === 'string' ? config.instruction.trim() : '',
+    exploreMs: Math.min(300_000, Math.max(5_000, positiveInt(merged.exploreMs, MAX_EXPLORE_MS))),
+    exploreRounds: Math.min(10, Math.max(1, positiveInt(merged.exploreRounds, MAX_EXPLORE_ROUNDS))),
+    instruction: typeof merged.instruction === 'string' ? merged.instruction.trim() : '',
     // Two independent lookup switches, both on by default. `light` used to turn the
     // whole lookup off and `standard` allowed only local; a user who wants neither
     // can now say so without losing the levels they did want.
-    useLocalLookup: config?.useLocalLookup === undefined ? true : config.useLocalLookup === true,
-    useWebSearch: config?.useWebSearch === undefined ? true : config.useWebSearch === true,
-    autoMode: config?.autoMode === 'goal' ? 'goal' : 'rounds',
-    autoRounds: Math.min(MAX_AUTOPILOT_ROUNDS, positiveInt(config?.autoRounds, 5)),
-    autoGoal: typeof config?.autoGoal === 'string' ? config.autoGoal.slice(0, 500) : '',
-    autoResearch: ['none', 'local', 'web'].includes(config?.autoResearch) ? config.autoResearch : 'local',
+    useLocalLookup: merged.useLocalLookup === undefined ? true : merged.useLocalLookup === true,
+    useWebSearch: merged.useWebSearch === undefined ? true : merged.useWebSearch === true,
+    autoMode: merged.autoMode === 'goal' ? 'goal' : 'rounds',
+    autoRounds: Math.min(MAX_AUTOPILOT_ROUNDS, positiveInt(merged.autoRounds, 5)),
+    autoGoal: typeof merged.autoGoal === 'string' ? merged.autoGoal.slice(0, 500) : '',
+    autoResearch: ['none', 'local', 'web'].includes(merged.autoResearch) ? merged.autoResearch : 'local',
     // How long one round may wait for the assistant to finish its previous turn.
     // A conversation with hundreds of turns can take much longer than the 5-minute
     // default, so this is configurable rather than fixed.
     idleWaitMs: Math.min(
       60 * 60 * 1000,
-      Math.max(30 * 1000, positiveInt(config?.idleWaitMs, DEFAULT_IDLE_WAIT_MS)),
+      Math.max(30 * 1000, positiveInt(merged.idleWaitMs, DEFAULT_IDLE_WAIT_MS)),
     ),
   }
 }
@@ -1670,30 +1711,27 @@ async function loadCatalog(ctx) {
  * so rather than pretending it was saved.
  */
 async function persistSettings(ctx, next) {
+  // The plugin's own store first: it is the layer `readSettings` reads over the
+  // composed config, so a successful write here is what actually makes a save stick.
+  const stored = writeStoredSettings(next)
+  // Then the profile config, best effort. When dsh accepts it the two layers agree;
+  // when it refuses, the file above still holds the choice, so the user is not told
+  // their save failed when it took effect.
   const entry = ctx.fiber?.entry
   const editor = ctx.get('configEditor')
-  if (entry === undefined || editor === undefined) return { persisted: false, reason: 'no-config-editor' }
-  try {
-    await editor.edit(entry, current => ({
-      ...current,
-      modelSource: next.modelSource,
-      provider: next.provider,
-      model: next.model,
-      reasoningEffort: next.reasoningEffort,
-      defaultStrength: next.defaultStrength,
-      autoMode: next.autoMode,
-      autoRounds: next.autoRounds,
-      autoGoal: next.autoGoal,
-      autoResearch: next.autoResearch,
-      idleWaitMs: next.idleWaitMs,
-      exploreMs: next.exploreMs,
-      exploreRounds: next.exploreRounds,
-      timeoutMs: next.timeoutMs,
-    }))
-    return { persisted: true }
-  } catch (error) {
-    return { persisted: false, reason: textOf(error) }
+  let configError = null
+  if (entry !== undefined && editor !== undefined) {
+    try {
+      await editor.edit(entry, current => ({ ...current, ...next }))
+    } catch (error) {
+      configError = textOf(error)
+    }
+  } else {
+    configError = 'no-config-editor'
   }
+  if (stored) return { persisted: true, stored: 'file', configError }
+  if (configError === null) return { persisted: true, stored: 'config' }
+  return { persisted: false, reason: configError }
 }
 
 async function settingsRoute(ctx, settings, req, res) {
@@ -1726,13 +1764,19 @@ async function settingsRoute(ctx, settings, req, res) {
 
   const body = await readJson(req, 64 * 1024)
   const next = {
-    modelSource: body?.modelSource === 'fixed' ? 'fixed' : 'follow',
-    provider: typeof body?.provider === 'string' ? body.provider : '',
-    model: typeof body?.model === 'string' ? body.model : '',
-    reasoningEffort: typeof body?.reasoningEffort === 'string' ? body.reasoningEffort : '',
+    // Every field falls back to the current setting when the body omits it. Writing
+    // `body?.x === 'fixed' ? 'fixed' : 'follow'` meant a request that carried only one
+    // field silently reset the rest — a partial save wiped the chosen model, the goal
+    // and the budgets.
+    modelSource: body?.modelSource === undefined
+      ? settings.modelSource
+      : (body.modelSource === 'fixed' ? 'fixed' : 'follow'),
+    provider: typeof body?.provider === 'string' ? body.provider : settings.provider,
+    model: typeof body?.model === 'string' ? body.model : settings.model,
+    reasoningEffort: typeof body?.reasoningEffort === 'string' ? body.reasoningEffort : settings.reasoningEffort,
     // Two lookup switches. Absent means on, which is the documented default.
-    useLocalLookup: body?.useLocalLookup === undefined ? true : body.useLocalLookup === true,
-    useWebSearch: body?.useWebSearch === undefined ? true : body.useWebSearch === true,
+    useLocalLookup: body?.useLocalLookup === undefined ? settings.useLocalLookup : body.useLocalLookup === true,
+    useWebSearch: body?.useWebSearch === undefined ? settings.useWebSearch : body.useWebSearch === true,
     defaultStrength: STRENGTHS.includes(body?.defaultStrength) ? body.defaultStrength : settings.defaultStrength,
     autoMode: body?.autoMode === 'goal' ? 'goal' : (body?.autoMode === 'rounds' ? 'rounds' : settings.autoMode),
     autoRounds: Math.min(MAX_AUTOPILOT_ROUNDS, positiveInt(body?.autoRounds, settings.autoRounds)),

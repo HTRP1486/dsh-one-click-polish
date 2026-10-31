@@ -4,11 +4,12 @@
 # browser half rides this same row through package.json `dsh.client`, because
 # only a row named after the bare package carries a Client module.
 #
-# The row stays minimal on purpose: `inject` is declared by the module itself,
-# and the settings page writes this row's `config` into the profile patch layer,
-# which overrides this entry wholesale. Keeping the two shapes identical means
-# the override cannot silently drop a field.
+# The row carries no `config` on purpose. The settings page writes this row's
+# config into the profile patch layer, and dsh verifies a save by re-composing
+# the entry and comparing it with what it just wrote. A `config: {}` here took
+# part in that comparison and made every save after the first report
+# "overridden by a home patch or command-line overlay". Leaving the field out
+# lets the profile layer own the config outright.
 - insert:
     - id: one-click-polish
       name: 'dsh-one-click-polish'
-      config: {}
