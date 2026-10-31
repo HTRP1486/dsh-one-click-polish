@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "One-click Polish / Expand",
-    "description": "Adds Polish and Expand to the composer toolbar. Polish rewrites the draft with the model this session is switched to (light, standard, or deep). Expand turns a one-line wish into a task brief: goal, features, flow, edge cases, acceptance criteria. The result is written back into the composer."
+    "title": "One-click Polish / Expand / Autopilot",
+    "description": "Adds Polish, Expand and Autopilot to the composer toolbar. Polish rewrites the draft with the model this session is switched to, with two independent lookup switches (local files, web). Expand turns a one-line wish into a full brief or a ready-to-use artefact, and never answers with a question. Autopilot has an AI read the conversation, write the next prompt and send it, round after round, until the goal is met. Results are written back into the composer and the process is shown in a panel above it."
   }
 }
