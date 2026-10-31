@@ -3185,7 +3185,12 @@ window.__ModuleLoader__.load({
         }
       }, [])
 
-      useEffect(() => { void checkVersion(false) }, [checkVersion])
+      // Opening this page asks npm again. The host caches the answer for ten minutes
+      // so a page load does not wait on the registry, and that cache made a fresh
+      // release look absent until it expired — the reason the version line showed an
+      // older latest than npm actually had. This is a deliberate cost: one registry
+      // request per visit, in exchange for a number that is true when it is read.
+      useEffect(() => { void checkVersion(true) }, [checkVersion])
 
       /** Sessions that have an archived run, newest first. */
       const loadRuns = useCallback(async () => {
