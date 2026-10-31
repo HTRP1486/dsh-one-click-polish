@@ -126,27 +126,28 @@ https://raw.githubusercontent.com/HTRP1486/dsh-one-click-polish/main/market-inde
 
 ### 版本号
 
-四处保持同步，每次发布一起改：
+**只有两处需要同步**：
 
 | 位置 | 当前 |
 | --- | --- |
-| `package.json` 的 `version` | `1.9.5` |
-| npm 的 `latest` 标签 | `1.9.5` |
-| GitHub 的 tag | `v1.9.5` |
-| GitHub 的 Release（含 tgz） | `v1.9.5` |
+| `package.json` 的 `version` | `1.9.7` |
+| npm 的 `latest` 标签 | `1.9.7` |
+
+这两处一致，安装的人拿到的就是正确的版本。GitHub 的 tag 和 Release 是附带的（方便回溯和手动下载），不同步也不影响使用。
 
 发版一条命令：
 
 ```powershell
-$env:GITHUB_TOKEN = 'ghp_...'   # 只勾 repo 权限就够，可设 7 天过期
+$env:NPM_TOKEN    = 'npm_...'   # npm 没登录时需要
+$env:GITHUB_TOKEN = 'ghp_...'   # 可选；不设就跳过 GitHub Release
 .\release.ps1
 ```
 
-`release.ps1` 会先做检查（工作区干净 / tag 未占用 / npm 上没有这个版本 / 两个文件语法 / 无 BOM / 仓库里没有运行时文件），再推送、打 tag、发 npm、建 Release 并上传同一份 tgz。`-DryRun` 只检查不发布。
+`release.ps1` 会先做检查（工作区干净 / tag 未占用 / npm 上没有这个版本 / 两个文件语法 / 无 BOM / 仓库里没有运行时文件），再推送、发 npm，然后打 tag、建 Release 并上传同一份 tgz。`-DryRun` 只检查不发布。
 
 `release.sh` 是同功能的 bash 版，给装了 bash 的机器用；本机只有 WSL 占位程序，跑不了。
 
-token 从 `GITHUB_TOKEN` 环境变量读，不走命令行参数——参数会进 shell 历史，也会出现在进程列表里。
+token 从环境变量读，不走命令行参数——参数会进 shell 历史，也会出现在进程列表里。
 
 ### 装不上时
 

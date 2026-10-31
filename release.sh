@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# One release, four places that must agree.
+# One release. Two version numbers must agree:
 #
-#   package.json version == npm latest == GitHub tag == GitHub Release
+#   package.json version == npm latest
+#
+# Those two are what an install actually reads. The git tag and the GitHub Release
+# are extras — created only when GITHUB_TOKEN is set.
 #
 # Run from the repo root. It refuses to continue when the tree is dirty, when the
-# three places already disagree, or when the tag exists — a forced resync there
+# version is already published, or when the tag exists — a forced resync there
 # would publish a version number that does not match its contents.
 #
 # The GitHub Release step needs a token in the environment, never on the command

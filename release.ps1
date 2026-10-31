@@ -1,12 +1,16 @@
 <#
-  One release, four places that must agree.
+  One release. Two version numbers must agree:
 
-    package.json version == npm latest == GitHub tag == GitHub Release
+    package.json version == npm latest
+
+  Those two are what an install actually reads. The git tag and the GitHub Release
+  are extras — useful for history and for a manual download, harmless when absent —
+  so they are created only when GITHUB_TOKEN is set.
 
   Run from the repo root:
 
-    $env:GITHUB_TOKEN = 'ghp_...'   # optional; without it the Release step is skipped
     $env:NPM_TOKEN    = 'npm_...'   # optional; only needed when npm is not logged in
+    $env:GITHUB_TOKEN = 'ghp_...'   # optional; without it the Release step is skipped
     .\release.ps1
 
   It refuses to continue when the tree is dirty, when the version is already
