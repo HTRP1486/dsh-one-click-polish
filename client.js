@@ -2721,16 +2721,6 @@ window.__ModuleLoader__.load({
           ? `${entry.summary ?? ''}${entry.text ? ` — ${entry.text}` : ''}`
           : (entry.reasoning || entry.text || '')
 
-        // What goes inside the row. A tool line is a settled result and is printed at
-        // once; reasoning types itself out exactly as it does in the run panel, so the
-        // monitor reads as live thinking rather than clauses landing in chunks.
-        // A folded row shows only its peek line above, so the body is empty here.
-        const bodyNode = foldable && !open
-          ? ''
-          : (kind === 'tool'
-            ? String(body).slice(0, 1500)
-            : h(ThoughtStream, { text: String(body).slice(0, 1500), variant: 'trace' }))
-
         // Two things fold: long tool rows (noise) and reasoning rows (long
         // paragraphs worth skimming past). A live row never folds — the point of
         // watching a run is seeing the text arrive.
@@ -2741,6 +2731,17 @@ window.__ModuleLoader__.load({
         // opens only where the user wants detail. `openRows` holds what was opened.
         const toggled = openRows.has(index)
         const open = toggled
+
+        // What goes inside the row. Declared after `foldable`/`open` on purpose: it
+        // reads both, and using them before initialisation throws inside the render,
+        // which made React retire this whole registration.
+        // A tool line is a settled result and is printed at once; reasoning types
+        // itself out the same way the run panel does.
+        const bodyNode = foldable && !open
+          ? ''
+          : (kind === 'tool'
+            ? String(body).slice(0, 1500)
+            : h(ThoughtStream, { text: String(body).slice(0, 1500), variant: 'trace' }))
         return h('div', {
           key: index,
           className: 'dsh-op-thinkRow',
