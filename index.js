@@ -307,10 +307,27 @@ function unwrapFence(output, input) {
  * marked as loop-built, so no listener assumes it can be reconstructed from a
  * Session log, and nothing is appended to the Session.
  */
+/**
+ * The conversation a hand-built call belongs to.
+ *
+ * A normal chat turn always carries the session; a hand-built `llm.stream` has to
+ * pass it explicitly. Some provider routes need it: the opencode route answers
+ * `400 MissingSessionID` unless the request carries the `x-opencode-session`
+ * header it derives from this field, which is what the autopilot hit — the driver
+ * read the 400 as a hard failure and stopped the loop with 出错 before round 1.
+ *
+ * Returns an empty object when there is no session, so it can always be spread.
+ */
+function sessionOption(job) {
+  const id = job?.sessionId
+  return typeof id === 'string' && id !== '' ? { sessionId: id } : {}
+}
+
 async function runModel(ctx, selection, input, system, signal, job) {
   const options = {
     provider: selection.provider,
     model: selection.model,
+    ...sessionOption(job),
     ...(selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort }),
     messages: [{ role: 'user', content: [{ type: 'text', text: input }] }],
     system,
@@ -1164,6 +1181,7 @@ async function explore(ctx, selection, input, research, job, agent, signal, syst
     const stream = ctx.llm.stream({
       provider: selection.provider,
       model: selection.model,
+      ...sessionOption(job),
       messages,
       system: fullSystem,
       tools,
@@ -1276,6 +1294,7 @@ async function explore(ctx, selection, input, research, job, agent, signal, syst
       const closing = ctx.llm.stream({
         provider: selection.provider,
         model: selection.model,
+        ...sessionOption(job),
         messages: [
           ...messages,
           {
@@ -2303,7 +2322,7 @@ async function composeNextPrompt(ctx, agent, selection, pilot, job, signal) {
       '',
       '请直接输出下一条要发给助手的用户消息正文（不要调用工具、不要解释、不要加前缀）。',
       '如果你判断目标已经达成，就只输出 DONE。',
-    ].join('\n'), signal)
+    ].join('\n'), signal, job)
     if (retry.trim() !== '') {
       if (/^DONE\b/i.test(retry.trim())) return { done: true, text: '' }
       return { done: false, text: clampMessage(retry.trim(), job) }
@@ -2340,12 +2359,13 @@ function clampMessage(text, job) {
 }
 
 /** One plain completion with no tools attached, for when the tool loop stalls. */
-async function askPlainly(ctx, selection, system, input, signal) {
+async function askPlainly(ctx, selection, system, input, signal, job) {
   try {
     let text = ''
     const stream = ctx.llm.stream({
       provider: selection.provider,
       model: selection.model,
+      ...sessionOption(job),
       messages: [{ role: 'user', content: [{ type: 'text', text: input }] }],
       system,
       signal,
