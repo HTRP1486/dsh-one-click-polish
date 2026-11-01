@@ -23,3 +23,6 @@ pnpm-debug.log*
 # Packed artifacts
 *.tgz
 dist/
+
+# 真实界面截图（含个人会话名），只在本地当渲染基准，不进公开仓库
+refs/screenshots/
