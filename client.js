@@ -330,6 +330,10 @@ window.__ModuleLoader__.load({
         'run.task.expand': '扩写重写',
         'run.skipped': '已跳过',
         'job.failed': '失败',
+        'error.cause': '可能原因：',
+        'error.hint': '可以试试：',
+        'error.cause.unknown': '没能识别这个错误，把下面的原文发给开发者更快。',
+        'error.hint.unknown': '先重试一次；还不行就换个模型或开新对话。',
         'job.hide': '收起',
         'job.cancel': '取消这次操作',
         'job.expand': '展开进度',
@@ -520,6 +524,10 @@ window.__ModuleLoader__.load({
         'run.task.expand': 'Expand',
         'run.skipped': 'Skipped',
         'job.failed': 'Failed',
+        'error.cause': 'Likely cause: ',
+        'error.hint': 'Try: ',
+        'error.cause.unknown': 'This one is not recognised — the raw text below is what a maintainer needs.',
+        'error.hint.unknown': 'Retry once; if it persists, switch model or open a new conversation.',
         'job.hide': 'Collapse',
         'job.cancel': 'Cancel this run',
         'job.expand': 'Show progress',
@@ -820,7 +828,17 @@ window.__ModuleLoader__.load({
 .dsh-op-runToolName{flex:none;font-weight:600;opacity:.9}
 .dsh-op-runToolDetail{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;opacity:.75}
-.dsh-op-runErr{margin-top:6px;font-size:11px;color:var(--dsw-alias-state-error-primary)}
+/* A failure, explained in three lines: what the provider said, what it probably
+   means, and what to do. The raw string stays visible but small — it is evidence for
+   a maintainer, not the answer for the person looking at the panel. */
+.dsh-op-errNote{margin-top:8px;padding:9px 11px;border-radius:10px;
+  background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 10%,transparent);
+  border:1px solid color-mix(in srgb,var(--dsw-alias-state-error-primary) 28%,transparent);
+  display:flex;flex-direction:column;gap:4px}
+.dsh-op-errRaw{font-size:10.5px;line-height:15px;color:var(--dsw-alias-label-tertiary);
+  word-break:break-word;max-height:44px;overflow:hidden}
+.dsh-op-errCause{font-size:12px;line-height:17px;color:var(--dsw-alias-label-primary)}
+.dsh-op-errHint{font-size:11.5px;line-height:16px;color:var(--dsw-alias-state-warn-primary)}
 @media (prefers-reduced-motion:reduce){
   .dsh-op-run{animation:none}
   .dsh-op-task{animation:none}
@@ -2012,7 +2030,7 @@ window.__ModuleLoader__.load({
                       }, t('auto.resume.discard')))
                     : null,
                   pilot !== null && typeof pilot.error === 'string' && pilot.error !== ''
-                    ? h('p', { className: 'dsh-op-hint dsh-op-hint--error dsh-op-hint--block' }, pilot.error)
+                    ? h(ErrorNote, { raw: pilot.error, t })
                     : null,
                   // Why the last run ended. Without this a run that stops on its own
                   // looks like it switched itself off for no reason.
@@ -2401,6 +2419,99 @@ window.__ModuleLoader__.load({
           },
         }, confirm.confirmLabel ?? t('confirm.ok')))))
     }
+    // ── error explanation ───────────────────────────────────────────────────
+    /**
+     * The failure table.
+     *
+     * A raw provider string like `400: {"type":"MissingSessionID"}` tells the user
+     * nothing and looks like the plugin broke. Each row turns one into what actually
+     * happened and what to do about it. Order matters: the first match wins, so put
+     * the specific patterns above the generic status codes.
+     */
+    const ERROR_CAUSES = [
+      {
+        test: /MissingSessionID|x-opencode-session/i,
+        cause: '模型通道要求带上会话标识，这次请求没带。',
+        hint: '1.9.9 及以后已修；还出现就在输入框里重新选一次模型。',
+      },
+      {
+        test: /余额|balance|insufficient|quota|not enough|arrears/i,
+        cause: '账户余额或额度不够了。',
+        hint: '去模型平台的用量页看余额，充值后重试。',
+      },
+      {
+        test: /\b401\b|unauthor|invalid.*(api.?key|token)|凭证|密钥/i,
+        cause: '模型凭证无效或已过期。',
+        hint: '设置 → 模型 里重新登录，或换一个已配置好的模型。',
+      },
+      {
+        test: /\b403\b|forbidden|permission denied|没有权限/i,
+        cause: '当前账号没有调用这个模型的权限。',
+        hint: '确认账号已开通该模型，或换一个有权限的模型。',
+      },
+      {
+        test: /\b404\b|model.*not.*found|no such model|模型不存在/i,
+        cause: '这个模型不存在，或已经下线了。',
+        hint: '设置 → 模型 里重新选一个在列表里的模型。',
+      },
+      {
+        test: /\b429\b|rate.?limit|too many requests|限流/i,
+        cause: '请求太频繁，被限流了。',
+        hint: '等 30–60 秒再点一次；经常这样就换一个通道。',
+      },
+      {
+        test: /reasoning.?effort|不支持.*(档位|思考)|effort/i,
+        cause: '当前模型不支持设置里选的那个思考档位。',
+        hint: '设置 → 润色/扩写 → 思考程度改成「默认」。',
+      },
+      {
+        test: /context.*(length|window)|too long|max.?tokens|上下文/i,
+        cause: '对话太长，超出了模型能一次读完的范围。',
+        hint: '开一个新对话，或把自动模式的目标写短一些。',
+      },
+      {
+        test: /timeout|timed.?out|aborted|abort|中断/i,
+        cause: '请求超时，或中途被取消了。',
+        hint: '网络慢时把设置里的「检索预算 / 改写预算」调大。',
+      },
+      {
+        test: /ENOTFOUND|ECONNREFUSED|ECONNRESET|network|fetch failed|网络/i,
+        cause: '连不上模型服务。',
+        hint: '检查代理或 VPN；切换对话时正在跑的润色也会被取消，这是正常的。',
+      },
+      {
+        test: /\b5\d\d\b|internal server|bad gateway|unavailable|服务端/i,
+        cause: '模型服务端故障。',
+        hint: '不是你这边的问题，过几分钟重试就好。',
+      },
+    ]
+
+    /** Split one raw failure into { text, cause, hint }. Always returns an object. */
+    function explainError(raw, t) {
+      const text = String(raw ?? '').trim()
+      if (text === '') return null
+      const hit = ERROR_CAUSES.find(row => row.test.test(text))
+      return {
+        text,
+        cause: hit === undefined ? t('error.cause.unknown') : hit.cause,
+        hint: hit === undefined ? t('error.hint.unknown') : hit.hint,
+      }
+    }
+
+    /**
+     * A failure, rendered as: what the provider said, what it probably means, and
+     * what to do. Three lines beat one opaque code.
+     */
+    function ErrorNote({ raw, t }) {
+      const explained = explainError(raw, t)
+      if (explained === null) return null
+      return h('div', { className: 'dsh-op-errNote' },
+        h('div', { className: 'dsh-op-errRaw' }, explained.text.slice(0, 400)),
+        h('div', { className: 'dsh-op-errCause' }, t('error.cause') + ' ' + explained.cause),
+        explained.hint === ''
+          ? null
+          : h('div', { className: 'dsh-op-errHint' }, t('error.hint') + ' ' + explained.hint))
+    }
     // ── streaming thought ───────────────────────────────────────────────────
     /**
      * One thought, revealed a character at a time.
@@ -2743,7 +2854,9 @@ window.__ModuleLoader__.load({
               h('span', { className: 'dsh-op-runToolName' }, tool.name ?? 'tool'),
               h('span', { className: 'dsh-op-runToolDetail' },
                 `${tool.summary ?? ''}${tool.text ? ` ${tool.text}` : ''}`)),
-          failed ? h('div', { className: 'dsh-op-runErr' }, String(job.error)) : null))
+          // The panel is fixed height, so a long explanation would push the rows
+          // around. The body scrolls, which is enough for the rare failure.
+          failed ? h(ErrorNote, { raw: job.error, t }) : null))
     }
     // ── right-hand thinking window ──────────────────────────────────────────
     /**
